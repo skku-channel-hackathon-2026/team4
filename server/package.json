@@ -1,0 +1,36 @@
+{
+  "name": "@tutorial/server",
+  "version": "1.0.0",
+  "description": "Channel App Store tutorial server using the official TypeScript SDK",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch main.ts",
+    "start": "node dist/main.js",
+    "test": "tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "register": "node dist/src/register.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@channel.io/app-sdk-server": "0.17.2",
+    "@tutorial/shared": "workspace:*",
+    "@nestjs/common": "11.1.28",
+    "@nestjs/core": "11.1.28",
+    "@nestjs/platform-express": "11.1.28",
+    "dotenv": "^17.2.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.6",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "dist"
+  ]
+}

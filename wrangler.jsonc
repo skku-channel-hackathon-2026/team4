@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "skku-team4",
+  "main": "cloudflare/worker.mjs",
+  "compatibility_date": "2026-09-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "cloudflare/static",
+    "binding": "ASSETS",
+    "run_worker_first": ["/functions", "/functions/*", "/api/*"],
+  },
+  "vars": {
+    "AUTO_REGISTER": "false",
+    "CLOUDFLARE_WORKER": "1",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "skku-team4",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "cloudflare/migrations",
+    },
+  ],
+  "alias": {
+    "@nestjs/websockets/socket-module": "./cloudflare/unsupported-optional.cjs",
+    "@nestjs/microservices/microservices-module": "./cloudflare/unsupported-optional.cjs",
+    "@nestjs/microservices": "./cloudflare/unsupported-optional.cjs",
+    "class-validator": "./cloudflare/unsupported-optional.cjs",
+    "class-transformer": "./cloudflare/unsupported-optional.cjs",
+  },
+}

@@ -1,0 +1,15 @@
+.DS_Store
+.idea
+**/node_modules/
+.env
+**/dist/
+**/.yarn/install-state.gz
+
+.vercel/
+.env.*
+!.env.example
+
+.wrangler/
+.dev.vars*
+cloudflare/static/
+cloudflare/bundle/

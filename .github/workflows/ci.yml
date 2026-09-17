@@ -1,0 +1,43 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build:vercel
+      - run: pnpm test:vercel
+      - run: pnpm build:cloudflare
+      - run: pnpm exec wrangler deploy --dry-run --outdir cloudflare/bundle
+      - run: pnpm db:migrate:local
+      - name: Local Workers smoke
+        run: |
+          printf 'APP_ID=local-smoke\nAPP_SECRET=local-smoke-secret\nSIGNING_KEY=%s\n' "$(printf '11%.0s' {1..32})" > .dev.vars
+          pnpm exec wrangler dev --local --port 8797 > /tmp/wrangler-smoke.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:8797/api/health > /dev/null; then break; fi
+            sleep 1
+          done
+          pnpm test:cloudflare || { cat /tmp/wrangler-smoke.log; exit 1; }
