@@ -36,9 +36,15 @@ import ModelSettingsPage from './pages/Admin/ModelSettings'
 import SeniorInputPage from './pages/Senior/SeniorInput'
 import SosInboxPage from './pages/Senior/SosInbox'
 import { resolveError, type FailfairError } from './utils/failfairError'
+import DemoVoice from './components/failfair/DemoVoice'
 
 const WAM_WIDTH = 560
 const WAM_MAX_HEIGHT = 720
+const demoParams = new URLSearchParams(window.location.search)
+const SHOW_DEMO_VOICE =
+  import.meta.env.DEV ||
+  demoParams.get('bridge') === 'server' ||
+  demoParams.get('demoVoice') === '1'
 
 /**
  * v2 §3.1 2단계 "현재 정보로 계속하기".
@@ -317,6 +323,16 @@ function App() {
       // 이미 건너뛴 것이라 그대로 쌓으면 같은 문구가 세 번 이어져 보인다.
       const before = current.messages
       const at = Date.now()
+      const studentMessage = {
+        role: 'student' as const,
+        content: SKIP_TEXT,
+        at,
+      }
+      // 일반 보내기와 같은 순서로 학생 말풍선을 먼저 그려 음성도 먼저 읽는다.
+      setSession({
+        ...current,
+        messages: [...before, studentMessage],
+      })
       for (let attempt = 0; attempt < MAX_SKIPS; attempt += 1) {
         const replied = await api.reply(
           current.id,
@@ -331,7 +347,7 @@ function App() {
           situation: replied.situation,
           messages: [
             ...before,
-            { role: 'student', content: SKIP_TEXT, at },
+            studentMessage,
             {
               role: 'assistant',
               content: replied.assistantMessage,
@@ -339,10 +355,11 @@ function App() {
             },
           ],
         }
-        sessionRef.current = current
-        setSession(current)
         if (current.state !== 'COLLECTING') break
       }
+      // 중간 건너뛰기 질문은 화면과 음성에 쌓지 않고 최종 답변만 반영한다.
+      sessionRef.current = current
+      setSession(current)
       if (current.state !== 'COLLECTING') {
         setScreen({ kind: 'student', step: 'situation' })
       }
@@ -859,6 +876,12 @@ function App() {
           className="ff-scroll"
           ref={scrollRef}
         >
+          {SHOW_DEMO_VOICE && session && screen.kind === 'student' && (
+            <DemoVoice
+              key={session.id}
+              messages={session.messages}
+            />
+          )}
           {error && (
             <ErrorNotice
               error={error}

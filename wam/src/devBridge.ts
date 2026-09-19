@@ -16,7 +16,7 @@ import {
 /**
  * `pnpm dev:wam`으로 브라우저에서 단독 실행할 때만 쓰는 가짜 채널톡 bridge.
  * 서버 규칙의 축약판이라 화면 흐름 확인용이며, 실제 매칭 품질은 서버가 기준이다.
- * 프로덕션 빌드에서는 `import.meta.env.DEV`가 false라 아무것도 하지 않는다.
+ * 프로덕션 빌드에서는 로컬 주소에 `?bridge=server`가 있을 때만 설치한다.
  * 주소 뒤에 `?mode=senior` 처럼 붙이면 호스트 값을 바꿔 볼 수 있다.
  *
  * `?bridge=server` (또는 `VITE_DEV_BRIDGE=server`, `pnpm dev:wam:server`)를 붙이면
@@ -24,7 +24,12 @@ import {
  * Gemini 대화를 브라우저에서 볼 때 쓴다. 요청은 vite 프록시(/functions)를 거친다.
  */
 export async function installDevBridge(): Promise<void> {
-  if (!import.meta.env.DEV || window.ChannelIOWam) return
+  const search = new URLSearchParams(window.location.search)
+  const localServerBridge =
+    ['127.0.0.1', 'localhost'].includes(window.location.hostname) &&
+    search.get('bridge') === 'server'
+  if ((!import.meta.env.DEV && !localServerBridge) || window.ChannelIOWam)
+    return
 
   const data: Record<string, unknown> = {
     appId: 'dev-app',
@@ -37,7 +42,7 @@ export async function installDevBridge(): Promise<void> {
     chatToken: 'dev-chat-token',
     appearance: 'light',
   }
-  new URLSearchParams(window.location.search).forEach((value, key) => {
+  search.forEach((value, key) => {
     data[key] = value
   })
 
