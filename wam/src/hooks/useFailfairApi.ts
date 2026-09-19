@@ -70,22 +70,33 @@ export function newRequestId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/**
+ * 상태를 바꾸는 호출은 `requestId`를 받는다.
+ *
+ * 서버 `mutate`는 같은 `requestId`를 revision 검사보다 **먼저** 확인해서 저장해 둔
+ * 응답을 그대로 돌려준다. 그래서 통신 실패로 같은 요청을 재전송할 때 이 값을
+ * 그대로 유지하면, 서버는 처리했는데 응답만 유실된 경우에도 중복 처리 없이
+ * 원래 결과를 되찾는다. 생략하면 새 값을 만들어 쓴다(= 새 요청).
+ */
 export interface FailfairApi {
   start(category: Category): Promise<StartOutput>
   reply(
     sessionId: string,
     expectedRevision: number,
-    message: string
+    message: string,
+    requestId?: string
   ): Promise<ReplyOutput>
   confirmSituation(
     sessionId: string,
     expectedRevision: number,
-    situation: Situation
+    situation: Situation,
+    requestId?: string
   ): Promise<ConfirmSituationOutput>
   compare(
     sessionId: string,
     expectedRevision: number,
-    actions: ActionCandidate[]
+    actions: ActionCandidate[],
+    requestId?: string
   ): Promise<CompareOutput>
   getSession(sessionId: string): Promise<SessionView>
   getCase(sessionId: string, caseId: string): Promise<{ case: Case }>
@@ -104,26 +115,36 @@ export function createFailfairApi(appId: string): FailfairApi {
   return {
     start: (category) =>
       call(appId, F.start, { category, requestId: newRequestId() }),
-    reply: (sessionId, expectedRevision, message) =>
+    reply: (sessionId, expectedRevision, message, requestId = newRequestId()) =>
       call(appId, F.reply, {
         sessionId,
         expectedRevision,
         message,
-        requestId: newRequestId(),
+        requestId,
       }),
-    confirmSituation: (sessionId, expectedRevision, situation) =>
+    confirmSituation: (
+      sessionId,
+      expectedRevision,
+      situation,
+      requestId = newRequestId()
+    ) =>
       call(appId, F.confirmSituation, {
         sessionId,
         expectedRevision,
         situation,
-        requestId: newRequestId(),
+        requestId,
       }),
-    compare: (sessionId, expectedRevision, actions) =>
+    compare: (
+      sessionId,
+      expectedRevision,
+      actions,
+      requestId = newRequestId()
+    ) =>
       call(appId, F.compare, {
         sessionId,
         expectedRevision,
         actions,
-        requestId: newRequestId(),
+        requestId,
       }),
     getSession: (sessionId) => call(appId, F.getSession, { sessionId }),
     getCase: (sessionId, caseId) =>

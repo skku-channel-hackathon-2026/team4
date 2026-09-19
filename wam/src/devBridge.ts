@@ -134,11 +134,16 @@ export function installDevBridge() {
         if (!session) throw new Error('dev bridge: session not found')
         const text = String(params.message)
         const s = session.situation
-        if (!s.situation) s.situation = text
+        // 서버의 SKIP_PATTERN 축약판. 건너뛴 답은 필드에 넣지 않고 미확인으로 남긴다.
+        const skipped = /모르겠|말하고 싶지 않|건너|스킵|패스|글쎄/.test(text)
+        const FIELD_LABELS = ['마감·남은 시간', '진행 상황', '고려 중인 행동']
+        if (skipped && s.situation) {
+          const label = FIELD_LABELS[session.asked - 1]
+          if (label && !s.unknowns.includes(label)) s.unknowns.push(label)
+        } else if (!s.situation) s.situation = text
         else if (session.asked === 1) s.deadline.raw = text
         else if (session.asked === 2) s.progress = text
-        else if (session.asked === 3 && !/모르겠/.test(text))
-          s.consideredActions = [text]
+        else if (session.asked === 3) s.consideredActions = [text]
         const detected = ACTION_TAGS[session.category]
           .filter((action) =>
             action.keywords.some((keyword) => text.includes(keyword))

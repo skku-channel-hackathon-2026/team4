@@ -204,6 +204,12 @@ situation은 입력과 동일 구조이며 category,situation,goal,deadline:{raw
           throw new Error("Missing fields");
         previousOutput = raw;
         const result = Output.parse(raw);
+        // 전공은 학생이 첫 화면에서 고른 값이라 모델 응답 스키마에 없다. 여기서
+        // 이어 붙이지 않으면 `analyze`가 전공 없는 상황을 돌려주고, 호출부가 그걸
+        // 그대로 저장해 확인 이후의 답장 한 번에 전공이 조용히 사라진다.
+        // (값이 그대로라 아래 근거 검사도 통과한다.)
+        if (input.situation.major)
+          result.situation.major = { ...input.situation.major };
         for (const e of result.evidence)
           if (e.path.startsWith("situation.")) e.path = e.path.slice(10);
         if (result.situation.category !== input.category)

@@ -73,6 +73,17 @@ function CaseDetailPage({ item, onToolCopied }: CaseDetailPageProps) {
         >
           {item.title}
         </Text>
+        {item.sourceType === 'demo' && (
+          <div className="ff-box ff-warn">
+            <Text
+              as="p"
+              typo="13"
+            >
+              이 사례는 실제 선배 기록이 아니라 화면 확인용으로 만든 가상
+              사례예요. 실제 경험으로 바뀌기 전까지 판단 근거로 쓰지 마세요.
+            </Text>
+          </div>
+        )}
       </VStack>
 
       <Section title="당시 상황">

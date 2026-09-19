@@ -78,6 +78,18 @@ function ActionsReviewPage({
         순서를 정할 수도 있어요.
       </Text>
 
+      {list.length === 0 && (
+        <div className="ff-box ff-warn">
+          <Text
+            as="p"
+            typo="13"
+          >
+            아직 정리된 행동 후보가 없어요. 아래 &lsquo;직접 추가&rsquo;에 지금
+            고민 중인 선택지를 적으면 그대로 비교해 드려요.
+          </Text>
+        </div>
+      )}
+
       <VStack spacing={8}>
         {list.map((action) => (
           <div
@@ -144,6 +156,26 @@ function ActionsReviewPage({
           </div>
         </HStack>
       </Section>
+
+      {confirmed.length > 3 && (
+        <Text
+          as="p"
+          typo="12"
+          className="ff-critical"
+        >
+          한 번에 3개까지 비교할 수 있어요. {confirmed.length - 3}개를 빼
+          주세요.
+        </Text>
+      )}
+      {confirmed.length === 0 && list.length > 0 && (
+        <Text
+          as="p"
+          typo="12"
+          color="text-neutral-lighter"
+        >
+          비교할 행동을 하나 이상 골라 주세요.
+        </Text>
+      )}
 
       <HStack
         spacing={8}
