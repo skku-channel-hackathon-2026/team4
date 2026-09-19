@@ -3,6 +3,7 @@ import { httpServerHandler } from "cloudflare:node";
 import { env } from "cloudflare:workers";
 import { withDatabase } from "../server/dist/src/database.js";
 import handler from "../server/dist/src/serverless.js";
+import { demoTts } from "../server/dist/src/demo-tts.js";
 
 const server = createServer((request, response) => {
   void withDatabase(env.DB, () => handler(request, response)).catch((error) => {
@@ -17,6 +18,9 @@ const server = createServer((request, response) => {
 const http = httpServerHandler(server);
 export default {
   async fetch(request, bindings, context) {
+    if (new URL(request.url).pathname === "/api/tts") {
+      return demoTts(request, bindings);
+    }
     if (
       new URL(request.url).pathname === "/api/ready" &&
       request.method === "GET"

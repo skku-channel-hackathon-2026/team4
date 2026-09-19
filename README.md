@@ -112,6 +112,29 @@ Function 스키마·익스텐션·커맨드 메타데이터 변경 후에는 앱
 
 ## Project map
 
+### 발표용 음성
+
+학생 대화의 `음성 시연`을 펼쳐 시연 토큰을 입력하고 켜면, 이후 입력과 답변을
+학생·선배 목소리로 순서대로 읽습니다. `중지`, `마지막 대사 다시 듣기`를 지원합니다.
+기본값은 OFF이며, 실패하면 텍스트 대화는 계속됩니다. 새 세션에서는 다시 켜 주세요.
+
+Wrangler의 `.dev.vars`(배포 시 Worker secrets)에 아래 값을 설정합니다.
+Node 서버에서는 `server/.env`를 사용합니다. 키나 토큰은 Git에 넣지 않습니다.
+
+- `ELEVENLABS_API_KEY`: Text to Speech 권한이 있는 API 키
+- `ELEVENLABS_STUDENT_VOICE_ID`: 학생 목소리 ID
+- `ELEVENLABS_ASSISTANT_VOICE_ID`: 선배 목소리 ID (한국어 샘플을 듣고 선택)
+- `ELEVENLABS_MODEL_ID`: 기본값 `eleven_flash_v2_5`
+- `DEMO_TTS_TOKEN`: 별도로 생성한 충분히 긴 무작위 발표자 토큰. 화면에는 이 값만 입력합니다.
+
+API 키는 서버에만 보관하고 `/api/tts`는 발표자 토큰을 검사합니다. 토큰은 브라우저
+메모리에만 유지합니다. 학생 입력과 답변 텍스트가 ElevenLabs로 전달되므로 발표용
+가상 대화를 사용하세요. 시연이 끝나면 서버 토큰을 제거해 호출을 비활성화합니다.
+Vite는 `/api/tts`를 로컬 Worker(8787)로 전달합니다.
+MP3 스트리밍을 지원하는 브라우저에서는 수신 중 재생하고, 미지원 시 완성 음원을
+재생합니다. 첫 소리까지 모델·네트워크 지연이 있으며, 실제 Desk의 재생 허용과 음질은
+발표 기기에서 확인해야 합니다. 사례 카드는 자동 낭독 대상에 포함되지 않습니다.
+
 ```text
 server/
   src/app.module.ts          SDK module, registration configuration, signature guard

@@ -36,6 +36,7 @@ import ModelSettingsPage from './pages/Admin/ModelSettings'
 import SeniorInputPage from './pages/Senior/SeniorInput'
 import SosInboxPage from './pages/Senior/SosInbox'
 import { resolveError, type FailfairError } from './utils/failfairError'
+import DemoVoice from './components/failfair/DemoVoice'
 
 const WAM_WIDTH = 560
 const WAM_MAX_HEIGHT = 720
@@ -859,6 +860,12 @@ function App() {
           className="ff-scroll"
           ref={scrollRef}
         >
+          {session && screen.kind === 'student' && (
+            <DemoVoice
+              key={session.id}
+              messages={session.messages}
+            />
+          )}
           {error && (
             <ErrorNotice
               error={error}
