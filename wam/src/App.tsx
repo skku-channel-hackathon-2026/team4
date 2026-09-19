@@ -186,8 +186,23 @@ function App() {
         if (resolved.code === 'STALE_SESSION' && current) {
           try {
             const fresh = await api.getSession(current.id)
-            sessionRef.current = fresh
-            setSession(fresh)
+            // 서버에 아직 없는 로컬 학생 말풍선은 최신화 뒤에도 남겨 둔다.
+            // requestIds에 남아 있다는 것은 아직 성공 응답을 받지 못했다는 뜻이다.
+            const pending = current.messages.filter(
+              (message) =>
+                message.role === 'student' &&
+                requestIds.current.has(message.at) &&
+                !fresh.messages.some(
+                  (saved) =>
+                    saved.role === message.role && saved.at === message.at
+                )
+            )
+            const recovered = {
+              ...fresh,
+              messages: [...fresh.messages, ...pending],
+            }
+            sessionRef.current = recovered
+            setSession(recovered)
           } catch {
             // 조회도 실패하면 위 안내만 남긴다.
           }
@@ -270,6 +285,7 @@ function App() {
         const live = sessionRef.current
         if (!live) return
         const replied = await api.reply(live.id, live.revision, text, requestId)
+        requestIds.current.delete(at)
         mark(at, false)
         setSession((current) =>
           current

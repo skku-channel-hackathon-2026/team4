@@ -39,7 +39,7 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('재시도 복구 (PR #7 리뷰 1번)', () => {
-  it('STALE_SESSION이면 최신 revision으로 다시 보낸다', async () => {
+  it('STALE_SESSION이면 학생 말풍선을 보존하고 최신 revision으로 복구한다', async () => {
     await openChat()
     // 서버는 이미 revision 7까지 가 있고, 화면은 0을 들고 있는 상황
     bridge.forceRevision(7)
@@ -55,6 +55,25 @@ describe('재시도 복구 (PR #7 리뷰 1번)', () => {
     expect(first.expectedRevision).toBe(0)
     // 낡은 0이 아니라 최신화된 7로 나가야 한다
     expect(second.expectedRevision).toBe(7)
+    await waitFor(() => {
+      expect(screen.getAllByText('팀원이 잠수탔어요')).toHaveLength(1)
+      expect(screen.queryByText('보내지 못했어요')).toBeNull()
+    })
+    expect(
+      bridge
+        .session()
+        .messages.filter(
+          (message) =>
+            message.role === 'student' &&
+            message.content === '팀원이 잠수탔어요'
+        )
+    ).toHaveLength(1)
+    expect(bridge.session().revision).toBe(8)
+
+    send('8시간 남았어요')
+    await waitFor(() => expect(bridge.replies()).toHaveLength(3))
+    expect(bridge.replies()[2].expectedRevision).toBe(8)
+    expect(bridge.session().revision).toBe(9)
   })
 
   it('재시도는 같은 requestId를 유지한다', async () => {
@@ -70,6 +89,35 @@ describe('재시도 복구 (PR #7 리뷰 1번)', () => {
     const [first, second] = bridge.replies()
     // 서버가 이미 처리했을 수 있으므로 중복 실행되지 않아야 한다
     expect(second.requestId).toBe(first.requestId)
+  })
+
+  it('저장 후 응답만 유실돼도 서버와 화면에 메시지를 한 번만 남긴다', async () => {
+    await openChat()
+    bridge.loseReplyAfterCommit()
+
+    send('팀원이 잠수탔어요')
+    await screen.findByText(/메시지를 보내지 못했어요/)
+
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    await waitFor(() => expect(bridge.replies()).toHaveLength(2))
+
+    const [first, second] = bridge.replies()
+    expect(second.requestId).toBe(first.requestId)
+    expect(bridge.session().revision).toBe(1)
+    expect(
+      bridge
+        .session()
+        .messages.filter(
+          (message) =>
+            message.role === 'student' &&
+            message.content === '팀원이 잠수탔어요'
+        )
+    ).toHaveLength(1)
+    await waitFor(() => {
+      expect(screen.getAllByText('팀원이 잠수탔어요')).toHaveLength(1)
+      expect(screen.getAllByText('언제까지 해결해야 하나요?')).toHaveLength(1)
+      expect(screen.queryByText('보내지 못했어요')).toBeNull()
+    })
   })
 
   it('말풍선의 다시 보내기도 같은 requestId를 쓴다', async () => {

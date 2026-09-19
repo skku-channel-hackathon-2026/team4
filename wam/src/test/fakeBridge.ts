@@ -20,7 +20,16 @@ export interface FakeBridge {
   calls: CallRecord[]
   replies(): CallRecord[]
   failReplyWith(error: unknown): void
+  loseReplyAfterCommit(error?: unknown): void
   forceRevision(revision: number): void
+  session(): {
+    revision: number
+    messages: Array<{
+      role: 'student' | 'assistant'
+      content: string
+      at: number
+    }>
+  }
 }
 
 interface CallArgs {
@@ -36,9 +45,11 @@ export function installFakeBridge(): FakeBridge {
     at: number
   }[] = []
   let pendingReplyError: unknown = null
-  let forcedRevision: number | null = null
+  let pendingLostResponse: unknown = null
   let revision = 0
   let asked = 0
+  let state: 'COLLECTING' | 'REVIEWING_SITUATION' = 'COLLECTING'
+  const responses = new Map<string, unknown>()
 
   const situation = () => ({
     category: 'team_project' as const,
@@ -63,6 +74,10 @@ export function installFakeBridge(): FakeBridge {
     switch (name) {
       case F.start:
         revision = 0
+        asked = 0
+        state = 'COLLECTING'
+        messages.length = 0
+        responses.clear()
         messages.push({
           role: 'assistant',
           content: '팀에서 어떤 문제가 생겼나요?',
@@ -76,10 +91,16 @@ export function installFakeBridge(): FakeBridge {
         } as T
 
       case F.reply: {
+        const requestId = String(params.requestId)
+        const replay = responses.get(requestId)
+        if (replay) return replay as T
         if (pendingReplyError) {
           const error = pendingReplyError
           pendingReplyError = null
           throw error
+        }
+        if (params.expectedRevision !== revision) {
+          throw new Error('STALE_SESSION')
         }
         asked += 1
         revision += 1
@@ -90,25 +111,33 @@ export function installFakeBridge(): FakeBridge {
         })
         const assistantMessage =
           asked >= 3 ? '이 내용이 맞나요?' : '언제까지 해결해야 하나요?'
+        state = asked >= 3 ? 'REVIEWING_SITUATION' : 'COLLECTING'
         messages.push({
           role: 'assistant',
           content: assistantMessage,
           at: Date.now(),
         })
-        return {
-          state: asked >= 3 ? 'REVIEWING_SITUATION' : 'COLLECTING',
+        const response = {
+          state,
           revision,
           assistantMessage,
           situation: situation(),
-        } as T
+        }
+        responses.set(requestId, response)
+        if (pendingLostResponse) {
+          const error = pendingLostResponse
+          pendingLostResponse = null
+          throw error
+        }
+        return response as T
       }
 
       case F.getSession:
         return {
           id: 'session-1',
           category: 'team_project',
-          state: 'COLLECTING',
-          revision: forcedRevision ?? revision,
+          state,
+          revision,
           messages: [...messages],
           situation: situation(),
           actions: [],
@@ -150,8 +179,12 @@ export function installFakeBridge(): FakeBridge {
     failReplyWith: (error) => {
       pendingReplyError = error
     },
-    forceRevision: (value) => {
-      forcedRevision = value
+    loseReplyAfterCommit: (error = new Error('NETWORK_DOWN')) => {
+      pendingLostResponse = error
     },
+    forceRevision: (value) => {
+      revision = value
+    },
+    session: () => ({ revision, messages: [...messages] }),
   }
 }
