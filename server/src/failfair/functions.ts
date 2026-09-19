@@ -2,6 +2,7 @@ import { Injectable, Optional } from "@nestjs/common";
 import { z } from "zod";
 import {
   CaseSubmissionSchema,
+  ACTION_TAGS,
   CATEGORIES,
   CommandActionInputSchema,
   CompareInputSchema,
@@ -365,6 +366,24 @@ export class FailfairFunctions {
         { type: FAILFAIR_ERRORS.inProgress },
       );
     }
+    const parsed = CompareInputSchema.safeParse(input);
+    if (
+      !parsed.success ||
+      input.actions.some(
+        (action) =>
+          action.confirmed &&
+          action.actionTag &&
+          !ACTION_TAGS[session.category].some(
+            (tag) => tag.tag === action.actionTag,
+          ),
+      )
+    ) {
+      throw new FunctionCallError(
+        "Invalid confirmed actions",
+        FunctionCallErrorCode.BadRequest,
+        { type: FAILFAIR_ERRORS.invalidInput },
+      );
+    }
     const cases = await this.cases.listApproved(session.category);
     return this.sessions.mutate(
       session,
@@ -376,7 +395,10 @@ export class FailfairFunctions {
           current.situation,
           current.actions,
           cases,
-        );
+        ).map((result) => ({
+          ...result,
+          id: `${result.id}-r${current.revision + 1}`,
+        }));
         current.state = "RESULTS";
         const demo = current.results.some(
           (result) => result.sourceType === "demo",
@@ -412,9 +434,16 @@ export class FailfairFunctions {
     @Ctx() ctx: Context,
     @Input() input: z.infer<typeof GetCaseInputSchema>,
   ): Promise<z.infer<typeof GetCaseOutputSchema>> {
-    await this.sessions.load(ctx, input.sessionId);
-    const item = await this.cases.get(input.caseId);
-    if (!item || item.status !== "approved") {
+    const session = await this.sessions.load(ctx, input.sessionId);
+    const linked = session.results.some(
+      (result) => result.caseId === input.caseId,
+    );
+    const item = linked ? await this.cases.get(input.caseId) : undefined;
+    if (
+      !item ||
+      item.status !== "approved" ||
+      item.category !== session.category
+    ) {
       throw new FunctionCallError(
         "Case not found",
         FunctionCallErrorCode.NotFound,
@@ -440,6 +469,23 @@ export class FailfairFunctions {
     const session = await this.sessions.load(ctx, input.sessionId);
     // 결과 카드에 연결된 사례를 같이 남겨 두면 사례별 "도움 됨"을 셀 수 있다. 재전송은 한 번만 쌓인다.
     const result = session.results.find((entry) => entry.id === input.resultId);
+    if (!result)
+      throw new FunctionCallError(
+        "Result not found",
+        FunctionCallErrorCode.NotFound,
+        { type: FAILFAIR_ERRORS.notFoundOrForbidden },
+      );
+    if (input.event === "tool_copied") {
+      const item = result.caseId
+        ? await this.cases.get(result.caseId)
+        : undefined;
+      if (!item || item.status !== "approved" || !item.tool?.body.trim())
+        throw new FunctionCallError(
+          "No available tool for this result",
+          FunctionCallErrorCode.BadRequest,
+          { type: FAILFAIR_ERRORS.invalidInput },
+        );
+    }
     await recordFeedback({
       requestId: input.requestId,
       sessionId: session.id,

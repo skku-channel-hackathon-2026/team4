@@ -408,7 +408,18 @@ export type ConfirmSituationOutput = z.infer<
 >;
 
 export const CompareInputSchema = RequestBase.extend({
-  actions: z.array(ActionCandidateSchema).min(1).max(3),
+  actions: z
+    .array(ActionCandidateSchema)
+    .min(1)
+    .max(3)
+    .refine(
+      (actions) => new Set(actions.map((a) => a.id)).size === actions.length,
+      "Action ids must be unique",
+    )
+    .refine(
+      (actions) => actions.some((a) => a.confirmed),
+      "Confirm at least one action",
+    ),
 });
 export const CompareOutputSchema = z.object({
   state: SessionStateSchema,

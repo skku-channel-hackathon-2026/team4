@@ -1,3 +1,5 @@
+import { createTextSimilarity } from "./text-similarity.js";
+export { tokenize } from "./text-similarity.js";
 import {
   URGENCY_LABELS,
   type ActionCandidate,
@@ -10,113 +12,169 @@ import {
  * 행동별 사례 매칭 (v2 §5). C가 소유한다.
  * 점수는 내부 정렬용이며 화면에 확률로 표시하지 않는다.
  */
+export const MATCH_WEIGHTS = {
+  problem: 30,
+  context: 30,
+  constraints: 20,
+  goal: 15,
+  urgency: 5,
+} as const;
 export interface MatchInfo {
+  /** Internal relevance score, not success probability. */
   score: number;
   actionMatched: boolean;
+  relevant: boolean;
+  components: {
+    problem: number;
+    context: number;
+    constraints: number;
+    goal: number;
+    urgency: number;
+  };
   similarities: string[];
   differences: string[];
 }
-
-export function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .split(/[\s,.!?~()[\]"'·/]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length >= 2);
-}
-
-function overlaps(a: string, b: string): boolean {
-  const tokensA = tokenize(a);
-  const lowerB = b.toLowerCase();
-  return tokensA.some((token) => lowerB.includes(token));
-}
-
-export function scoreCase(
-  situation: Situation,
-  action: ActionCandidate,
-  item: Case,
-): MatchInfo {
-  let score = 0;
-  const similarities: string[] = [];
-  const differences: string[] = [];
-
-  const actionMatched = Boolean(
-    action.actionTag &&
-    item.actionSteps.some((step) => step.actionTag === action.actionTag),
-  );
-  if (actionMatched) {
-    score += 30;
-    similarities.push("선배가 실제로 이 행동을 했음");
-  }
-
-  if (situation.problemType && item.problemType === situation.problemType) {
-    score += 30;
-    similarities.push("같은 종류의 상황");
-  } else if (
-    situation.problemType &&
-    item.problemType !== situation.problemType
-  ) {
-    differences.push("문제의 종류가 다를 수 있음");
-  }
-
-  const constraintHit = situation.constraints.some((constraint) =>
-    item.constraints.some((own) => overlaps(constraint, own)),
-  );
-  if (constraintHit) {
-    score += 20;
-    similarities.push("주요 제약이 비슷함");
-  }
-
-  if (situation.deadline.urgency !== "unknown") {
-    if (item.urgency === situation.deadline.urgency) {
-      score += 10;
-      similarities.push(`남은 시간이 비슷함 (${URGENCY_LABELS[item.urgency]})`);
-    } else {
-      differences.push(`선배는 ${URGENCY_LABELS[item.urgency]} 상황이었음`);
-    }
-  }
-
-  if (situation.goal && overlaps(situation.goal, item.goal)) {
-    score += 10;
-    similarities.push("원하는 결과가 비슷함");
-  }
-
-  const haystack = [item.situation, item.title, ...item.tags]
-    .join(" ")
-    .toLowerCase();
-  let textHits = 0;
-  for (const token of tokenize(
-    `${situation.situation} ${situation.progress}`,
-  )) {
-    if (haystack.includes(token)) textHits += 1;
-  }
-  if (textHits > 0) {
-    score += Math.min(textHits, 10);
-    similarities.push("상황 설명에 겹치는 표현이 있음");
-  }
-
-  return { score, actionMatched, similarities, differences };
-}
-
 export interface RankedCase {
   item: Case;
   info: MatchInfo;
 }
 
+type Similarity = ReturnType<typeof createTextSimilarity>;
+const contextText = (item: Case) =>
+  [item.situation, item.title, ...item.tags].join(" ");
+const makeSimilarity = (cases: Case[]) =>
+  createTextSimilarity(
+    cases.map((item) =>
+      [contextText(item), item.goal, ...item.constraints].join(" "),
+    ),
+  );
+const distinct = (values: string[]) => [
+  ...new Set(values.map((v) => v.trim()).filter(Boolean)),
+];
+
+function evaluate(
+  situation: Situation,
+  action: ActionCandidate,
+  item: Case,
+  similarity: Similarity,
+): MatchInfo {
+  const actionMatched =
+    !!action.actionTag &&
+    item.actionSteps.some((step) => step.actionTag === action.actionTag);
+  const problem =
+    situation.problemType && situation.problemType === item.problemType ? 1 : 0;
+  const context = similarity(
+    [situation.situation, situation.progress].join(" "),
+    contextText(item),
+  );
+  const goal = similarity(situation.goal, item.goal);
+  const constraints = distinct(situation.constraints);
+  const constraintMatches = constraints.map((text) => ({
+    text,
+    score: Math.max(
+      0,
+      ...distinct(item.constraints).map((own) => similarity(text, own)),
+    ),
+  }));
+  // Average coverage across the student's restrictions; one shared word is not full coverage.
+  const constraintScore = constraints.length
+    ? constraintMatches.reduce((sum, m) => sum + m.score, 0) /
+      constraints.length
+    : 0;
+  const urgency =
+    situation.deadline.urgency !== "unknown" &&
+    item.urgency === situation.deadline.urgency
+      ? 1
+      : 0;
+  const components = {
+    problem,
+    context,
+    constraints: constraintScore,
+    goal,
+    urgency,
+  };
+  const score = Object.entries(MATCH_WEIGHTS).reduce(
+    (sum, [key, weight]) =>
+      sum + weight * components[key as keyof typeof components],
+    0,
+  );
+  // Category, action and urgency alone are not evidence of similar circumstances.
+  const relevant =
+    !!problem || context >= 0.12 || constraintScore >= 0.22 || goal >= 0.25;
+  const similarities: string[] = [];
+  const differences: string[] = [];
+  if (actionMatched) similarities.push("선배가 실제로 이 행동을 했음");
+  if (actionMatched && !relevant)
+    differences.push(
+      "행동은 같지만 현재 상황과의 유사성을 뒷받침할 정보는 부족함",
+    );
+  if (problem) similarities.push("같은 종류의 상황");
+  else if (situation.problemType)
+    differences.push("문제의 종류가 다를 수 있음");
+  if (context >= 0.12) similarities.push("상황·진행 설명에 관련된 표현이 있음");
+  for (const match of constraintMatches
+    .filter((m) => m.score >= 0.22)
+    .slice(0, 2))
+    similarities.push(`제약 관련 표현이 겹침: ${match.text.slice(0, 100)}`);
+  if (goal >= 0.25) similarities.push("목표 설명에 관련된 표현이 있음");
+  if (urgency)
+    similarities.push(`남은 시간이 비슷함 (${URGENCY_LABELS[item.urgency]})`);
+  else if (situation.deadline.urgency !== "unknown")
+    differences.push(
+      item.urgency === "unknown"
+        ? "선배의 당시 남은 시간은 미확인"
+        : `선배는 ${URGENCY_LABELS[item.urgency]} 상황이었음`,
+    );
+  if (constraints.length && constraintScore < 0.22)
+    differences.push("주요 제약이 비슷한지는 사례에서 확인되지 않음");
+  return {
+    score: Math.round(score * 100) / 100,
+    actionMatched,
+    relevant,
+    components,
+    similarities,
+    differences,
+  };
+}
+export function scoreCase(
+  situation: Situation,
+  action: ActionCandidate,
+  item: Case,
+): MatchInfo {
+  return evaluate(situation, action, item, makeSimilarity([item]));
+}
+function approvedCandidates(situation: Situation, cases: Case[]) {
+  return cases.filter(
+    (item) =>
+      item.status === "approved" && item.category === situation.category,
+  );
+}
+function rank(
+  situation: Situation,
+  action: ActionCandidate,
+  cases: Case[],
+  similarity: Similarity,
+): RankedCase[] {
+  return cases
+    .map((item) => ({
+      item,
+      info: evaluate(situation, action, item, similarity),
+    }))
+    .filter((entry) => entry.info.relevant || entry.info.actionMatched)
+    .sort(
+      (a, b) =>
+        Number(b.info.actionMatched) - Number(a.info.actionMatched) ||
+        b.info.score - a.info.score ||
+        (a.item.id < b.item.id ? -1 : a.item.id > b.item.id ? 1 : 0),
+    );
+}
 export function rankCases(
   situation: Situation,
   action: ActionCandidate,
   cases: Case[],
 ): RankedCase[] {
-  return cases
-    .filter((item) => item.category === situation.category)
-    .map((item) => ({ item, info: scoreCase(situation, action, item) }))
-    .filter((ranked) => ranked.info.score > 0)
-    .sort((a, b) => {
-      if (a.info.actionMatched !== b.info.actionMatched)
-        return a.info.actionMatched ? -1 : 1;
-      return b.info.score - a.info.score;
-    });
+  const candidates = approvedCandidates(situation, cases);
+  return rank(situation, action, candidates, makeSimilarity(candidates));
 }
 
 export function unknownsOf(situation: Situation): string[] {
@@ -170,6 +228,8 @@ export function buildResult(
         ...info.differences,
       ];
 
+  if (item.conditions.length)
+    base.unknowns.push("선배 사례의 적용 조건이 지금도 충족되는지는 확인 필요");
   return {
     ...base,
     status: info.actionMatched ? "matched" : "reference",
@@ -183,7 +243,7 @@ export function buildResult(
       .map((step) => step.description),
     outcome: item.outcome,
     cost: item.receipt.cost,
-    conditions: item.conditions,
+    conditions: [...item.conditions],
     toolTitle: item.tool?.title,
   };
 }
@@ -193,9 +253,25 @@ export function matchActions(
   actions: ActionCandidate[],
   cases: Case[],
 ): ActionResult[] {
-  return actions
+  const candidates = approvedCandidates(situation, cases);
+  const similarity = makeSimilarity(candidates);
+  const results = actions
     .filter((action) => action.confirmed)
     .map((action) =>
-      buildResult(action, situation, rankCases(situation, action, cases)[0]),
+      buildResult(
+        action,
+        situation,
+        rank(situation, action, candidates, similarity)[0],
+      ),
     );
+  for (const result of results) {
+    if (
+      result.caseId &&
+      results.filter((other) => other.caseId === result.caseId).length > 1
+    )
+      result.differences.push(
+        "다른 행동 카드와 동일한 선배 사례입니다. 서로 독립된 경험으로 세지 마세요",
+      );
+  }
+  return results;
 }
