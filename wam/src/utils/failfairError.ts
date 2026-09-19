@@ -55,6 +55,11 @@ const COPY: Record<
     hint: '몇 초 뒤에 다시 시도해 주세요.',
     action: 'retry',
   },
+  CHAT_TARGET_REQUIRED: {
+    message: '여기서는 SOS를 보낼 수 없어요.',
+    hint: '선배와 이어서 대화하려면 그룹 채팅방에서 /망선박을 열어 주세요. 앱이 1:1 방을 새로 만들지는 못해요.',
+    action: 'none',
+  },
 }
 
 /** 객체 안을 얕게 돌면서 알려진 오류 코드를 찾는다. */

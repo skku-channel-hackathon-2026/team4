@@ -17,9 +17,11 @@ import type {
   Major,
   SessionView,
   Situation,
+  SosRequest,
 } from '@tutorial/shared'
 
 import ErrorNotice from './components/failfair/ErrorNotice'
+import SosBox from './components/failfair/SosBox'
 import StepProgress from './components/failfair/StepProgress'
 import { newRequestId, useFailfairApi } from './hooks/useFailfairApi'
 import { useFailfairWamData } from './hooks/useFailfairWamData'
@@ -32,6 +34,7 @@ import SituationReviewPage from './pages/Failfair/SituationReview'
 import ReviewPage from './pages/Senior/Review'
 import ModelSettingsPage from './pages/Admin/ModelSettings'
 import SeniorInputPage from './pages/Senior/SeniorInput'
+import SosInboxPage from './pages/Senior/SosInbox'
 import { resolveError, type FailfairError } from './utils/failfairError'
 
 const WAM_WIDTH = 560
@@ -53,7 +56,7 @@ type StudentStep =
 type Screen =
   | { kind: 'home' }
   | { kind: 'student'; step: StudentStep }
-  | { kind: 'senior'; tab: 'input' | 'review' }
+  | { kind: 'senior'; tab: 'input' | 'review' | 'sos' }
   | { kind: 'admin' }
 
 const TITLES: Record<StudentStep, string> = {
@@ -86,6 +89,9 @@ function App() {
   const [notice, setNotice] = useState('')
   const [caseDetail, setCaseDetail] = useState<Case | null>(null)
   const [activeResultId, setActiveResultId] = useState<string | null>(null)
+  const [contactable, setContactable] = useState(false)
+  const [sos, setSos] = useState<SosRequest | null>(null)
+  const [sosNotified, setSosNotified] = useState<boolean | null>(null)
   const [helpfulIds, setHelpfulIds] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<FailfairError | null>(null)
@@ -402,10 +408,29 @@ function App() {
     void run(async () => {
       const live = sessionRef.current
       if (!live) return
-      const { case: item } = await api.getCase(live.id, caseId)
+      const { case: item, contactable: canSos } = await api.getCase(
+        live.id,
+        caseId
+      )
       setCaseDetail(item)
       setActiveResultId(resultId)
+      setContactable(Boolean(canSos))
+      setSos(null)
+      setSosNotified(null)
       setScreen({ kind: 'student', step: 'case' })
+      if (canSos) {
+        try {
+          const { requests } = await api.sosList('student')
+          setSos(
+            requests.find(
+              (request) =>
+                request.caseId === item.id && request.status !== 'declined'
+            ) ?? null
+          )
+        } catch {
+          // 이전 요청 조회가 실패해도 새 요청은 보낼 수 있다.
+        }
+      }
     }, '사례를 열지 못했어요.')
   }
 
@@ -422,6 +447,30 @@ function App() {
       .catch(() => undefined)
   }
 
+  const sendSos = (message: string) => {
+    if (!session || !caseDetail) return
+    void run(async () => {
+      const { request, notified } = await api.sosRequest(
+        session.id,
+        caseDetail.id,
+        message,
+        data?.chatToken ?? ''
+      )
+      setSos(request)
+      setSosNotified(notified)
+    }, 'SOS를 보내지 못했어요.')
+  }
+
+  const refreshSos = () => {
+    if (!caseDetail) return
+    void run(async () => {
+      const { requests } = await api.sosList('student')
+      setSos(
+        requests.find((request) => request.caseId === caseDetail.id) ?? null
+      )
+    }, 'SOS 상태를 불러오지 못했어요.')
+  }
+
   const restart = () => {
     sessionRef.current = null
     // 죽은 세션을 겨냥한 "다시 시도"가 남지 않도록 같이 비운다.
@@ -429,6 +478,9 @@ function App() {
     lastOnFail.current = undefined
     setSession(null)
     setCaseDetail(null)
+    setContactable(false)
+    setSos(null)
+    setSosNotified(null)
     setNotice('')
     setError(null)
     setFailedAts(new Set())
@@ -442,15 +494,17 @@ function App() {
     await api.submitCase(input)
   }
 
+  const listSeniorSos = useCallback(() => api.sosList('senior'), [api])
+
   // ---------------------------------------------------------------- 내비게이션
 
   const back = () => {
     setError(null)
     if (screen.kind === 'senior') {
       setScreen(
-        screen.tab === 'review'
-          ? { kind: 'senior', tab: 'input' }
-          : { kind: 'home' }
+        screen.tab === 'input'
+          ? { kind: 'home' }
+          : { kind: 'senior', tab: 'input' }
       )
       return
     }
@@ -505,7 +559,9 @@ function App() {
       : screen.kind === 'senior'
         ? screen.tab === 'input'
           ? '선배: 실패 사례 남기기'
-          : '사례 검수'
+          : screen.tab === 'review'
+            ? '사례 검수'
+            : 'SOS 요청'
         : screen.kind === 'admin'
           ? '모델 설정'
           : TITLES[screen.step]
@@ -626,10 +682,16 @@ function App() {
           onSubmit={submitCase}
           onOpenReview={() => setScreen({ kind: 'senior', tab: 'review' })}
         />
-      ) : (
+      ) : screen.tab === 'review' ? (
         <ReviewPage
           listCases={api.listCases}
           reviewCase={api.reviewCase}
+        />
+      ) : (
+        <SosInboxPage
+          listRequests={listSeniorSos}
+          respond={api.sosRespond}
+          currentChatId={data?.chatId ?? ''}
         />
       )
   } else {
@@ -717,6 +779,19 @@ function App() {
           <CaseDetailPage
             item={caseDetail}
             onToolCopied={toolCopied}
+            sosSlot={
+              contactable || sos ? (
+                <SosBox
+                  request={sos}
+                  busy={busy}
+                  notified={sosNotified}
+                  currentChatId={data?.chatId ?? ''}
+                  canSend={Boolean(data?.chatToken)}
+                  onSend={sendSos}
+                  onRefresh={refreshSos}
+                />
+              ) : undefined
+            }
           />
         ) : (
           <EmptyState
@@ -755,14 +830,27 @@ function App() {
                 label="처음부터"
                 onClick={restart}
               />
-            ) : screen.kind === 'senior' && screen.tab === 'input' ? (
-              <Button
-                size="xs"
-                variant="ghost"
-                semantic="secondary"
-                label="검수 목록"
-                onClick={() => setScreen({ kind: 'senior', tab: 'review' })}
-              />
+            ) : screen.kind === 'senior' ? (
+              <HStack spacing={4}>
+                {screen.tab !== 'review' && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    semantic="secondary"
+                    label="검수 목록"
+                    onClick={() => setScreen({ kind: 'senior', tab: 'review' })}
+                  />
+                )}
+                {screen.tab !== 'sos' && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    semantic="secondary"
+                    label="SOS 요청"
+                    onClick={() => setScreen({ kind: 'senior', tab: 'sos' })}
+                  />
+                )}
+              </HStack>
             ) : undefined
           }
         />

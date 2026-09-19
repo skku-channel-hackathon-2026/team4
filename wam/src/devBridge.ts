@@ -3,12 +3,14 @@ import {
   ACTION_TAGS,
   CATEGORIES,
   DEMO_CASES,
+  FAILFAIR_ERRORS,
   FAILFAIR_FUNCTIONS as F,
   type ActionCandidate,
   type ActionResult,
   type Case,
   type SessionView,
   type Situation,
+  type SosRequest,
 } from '@tutorial/shared'
 
 /**
@@ -21,7 +23,7 @@ import {
  * 가짜 규칙 대신 로컬 Worker(`pnpm dev:cloudflare`, 8787)를 부른다. 실제 서버 로직과
  * Gemini 대화를 브라우저에서 볼 때 쓴다. 요청은 vite 프록시(/functions)를 거친다.
  */
-export function installDevBridge() {
+export async function installDevBridge(): Promise<void> {
   if (!import.meta.env.DEV || window.ChannelIOWam) return
 
   const data: Record<string, unknown> = {
@@ -31,6 +33,8 @@ export function installDevBridge() {
     chatId: 'dev-group',
     chatType: 'group',
     chatTitle: '앱_개발_검증',
+    // 실제 호스트에서는 서버가 `open`에서 서명해 내려 준다. fake 모드에서는 자리만 채운다.
+    chatToken: 'dev-chat-token',
     appearance: 'light',
   }
   new URLSearchParams(window.location.search).forEach((value, key) => {
@@ -50,20 +54,47 @@ export function installDevBridge() {
     data.bridge === 'server' ||
     import.meta.env.VITE_DEV_BRIDGE === 'server'
   ) {
+    const serverCall = createServerCall(data)
     window.ChannelIOWam = {
       ...common,
-      callFunction: createServerCall(data),
+      callFunction: serverCall,
     } as ChannelIOWam
     console.info(
       '[dev bridge] server 모드: PUT /functions/v1 → vite 프록시 → 로컬 Worker 127.0.0.1:8787'
     )
+    // SOS 대상 표식은 서버만 서명할 수 있다. 호스트가 하듯 `open`을 한 번 불러 받아 온다.
+    try {
+      const opened = await serverCall<{
+        attributes?: { wamArgs?: { chatToken?: string } }
+      }>({
+        appId: String(data.appId),
+        name: F.open,
+        params: {
+          chat: { id: String(data.chatId), type: String(data.chatType) },
+          trigger: {
+            type: 'command',
+            attributes: { chatTitle: String(data.chatTitle) },
+          },
+          input: {},
+        },
+      })
+      data.chatToken = opened.attributes?.wamArgs?.chatToken ?? ''
+    } catch (error) {
+      data.chatToken = ''
+      console.warn(
+        '[dev bridge] open 호출 실패 — SOS는 막힙니다 (Worker가 떠 있는지 확인)',
+        error
+      )
+    }
     return
   }
+  data.chatToken = 'dev-chat-token'
   console.info(
     '[dev bridge] fake 모드: 브라우저 안 축약 규칙 (서버·Gemini 호출 없음)'
   )
 
   const cases: Case[] = [...DEMO_CASES]
+  const sosRequests: SosRequest[] = []
   let devModel: {
     provider: 'gemini' | 'rule'
     source: 'env' | 'record' | 'none'
@@ -292,7 +323,15 @@ export function installDevBridge() {
       case F.getCase: {
         const item = cases.find((candidate) => candidate.id === params.caseId)
         if (!item) throw new Error('dev bridge: case not found')
-        result = { case: item }
+        result = {
+          case: item,
+          contactable:
+            item.status === 'approved' &&
+            item.sourceType === 'real' &&
+            item.allowContact &&
+            !!item.authorManagerId &&
+            item.authorManagerId !== data.managerId,
+        }
         break
       }
       case F.feedback:
@@ -309,6 +348,9 @@ export function installDevBridge() {
           status: 'draft',
           sourceType: 'real',
           version: 1,
+          authorManagerId: params.allowContact
+            ? String(data.managerId)
+            : undefined,
           createdAt: Date.now(),
         } as Case
         cases.push(item)
@@ -330,6 +372,58 @@ export function installDevBridge() {
           status: params.status as Case['status'],
         }
         result = { case: cases[index] }
+        break
+      }
+      case F.sosRequest: {
+        const item = cases.find((candidate) => candidate.id === params.caseId)
+        if (!item) throw new Error('dev bridge: case not found')
+        // 서버와 같은 규칙: 서명된 그룹 채팅 표식이 없으면 보낼 수 없다.
+        if (!params.chatTarget)
+          throw Object.assign(new Error('dev bridge: chat target required'), {
+            type: FAILFAIR_ERRORS.chatTargetRequired,
+          })
+        // 서버처럼 (사례·새내기)당 대기 요청 하나만 둔다.
+        const pending = sosRequests.find(
+          (request) =>
+            request.caseId === item.id &&
+            request.studentManagerId === String(data.managerId) &&
+            request.status === 'pending'
+        )
+        const request: SosRequest = pending ?? {
+          id: `sos-dev-${sosRequests.length + 1}`,
+          caseId: item.id,
+          caseTitle: item.title,
+          channelId: String(data.channelId),
+          chatId: String(data.chatId),
+          chatType: 'group',
+          chatTitle: String(data.chatTitle),
+          studentManagerId: String(data.managerId),
+          seniorManagerId: item.authorManagerId ?? 'dev-senior',
+          message: String(params.message),
+          status: 'pending',
+          createdAt: Date.now(),
+        }
+        if (!pending) sosRequests.push(request)
+        result = { request, notified: !pending }
+        break
+      }
+      case F.sosList:
+        result = {
+          requests: sosRequests.filter((request) =>
+            params.role === 'senior'
+              ? request.seniorManagerId === data.managerId
+              : request.studentManagerId === data.managerId
+          ),
+        }
+        break
+      case F.sosRespond: {
+        const request = sosRequests.find((item) => item.id === params.sosId)
+        if (!request) throw new Error('dev bridge: sos not found')
+        if (request.status === 'pending') {
+          request.status = params.status as SosRequest['status']
+          request.respondedAt = Date.now()
+        }
+        result = { request, notified: false }
         break
       }
       case F.getModel:
