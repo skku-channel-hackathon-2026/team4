@@ -120,6 +120,17 @@ export const ACTION_TAGS: Record<
       label: "범위 축소·역할 재분배",
       keywords: ["나누", "재분배", "줄이", "범위", "분담"],
     },
+    {
+      tag: "request_deadline_extension",
+      label: "마감 연장 요청",
+      keywords: ["연장", "미뤄", "기한", "늦게 내", "순서 바꿔"],
+    },
+    {
+      // 사례가 아직 없는 행동. 학생이 고르면 "연결할 사례가 아직 없습니다"가 정상 결과다 (v2 §5.3).
+      tag: "request_member_removal",
+      label: "팀원 제외 요청",
+      keywords: ["빼달라", "제외", "교체", "쫓아", "명단에서"],
+    },
   ],
   grades: [
     {
@@ -137,6 +148,17 @@ export const ACTION_TAGS: Record<
       label: "과목 이수 계획 재검토",
       keywords: ["재수강", "드랍", "포기", "철회", "계획"],
     },
+    {
+      tag: "inform_professor",
+      label: "교수님께 상황 전달",
+      keywords: ["교수", "면담", "말씀", "메일", "배점"],
+    },
+    {
+      // 사례가 아직 없는 행동 (v2 §5.3).
+      tag: "request_grade_review",
+      label: "성적 이의신청",
+      keywords: ["이의", "정정", "재확인", "따져", "항의"],
+    },
   ],
   club: [
     {
@@ -153,6 +175,16 @@ export const ACTION_TAGS: Record<
       tag: "discuss_leaving",
       label: "활동 중단 논의",
       keywords: ["그만", "탈퇴", "나갈", "중단", "쉬고"],
+    },
+    {
+      tag: "recruit_replacement",
+      label: "후임·대체 인원 모집",
+      keywords: ["후임", "넘길 사람", "인수인계", "뽑", "모집"],
+    },
+    {
+      tag: "ask_help",
+      label: "선배·외부에 도움 요청",
+      keywords: ["선배", "OB", "물어", "도움", "경험자"],
     },
   ],
 };
