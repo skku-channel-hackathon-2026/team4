@@ -5,8 +5,8 @@
 > **성균관대 해커톤 팀 개발 안내**: [시작하기·배포·DB 마이그레이션](HACKATHON.ko.md) · [Desk 검증 기록](docs/desk-qa.md)
 > 팀 레포 Admin·채널톡 앱 owner 초대를 수락하고, 공통 성균관대 해커톤 채널에 참여하세요.
 > 앱 초대 확인·수락: [개발자 앱 목록](https://channel.works/-/developers/apps) — 초대 이메일과 같은 계정으로 로그인합니다.
-> 팀 레포는 **PR 머지 → main CI 성공 → 웹훅 → Cloudflare Workers 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
-> 원격 DB 마이그레이션·앱 비밀 키 변경·익스텐션 등록 갱신은 운영진에게 별도로 요청합니다. Vercel 또는 Cloudflare 계정 초대는 필요하지 않습니다.
+> 팀 레포는 **PR 머지 → main CI 성공 → 원격 D1 마이그레이션 → Cloudflare Workers 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
+> DB 마이그레이션은 자동 적용됩니다. 앱 비밀 키 변경·익스텐션 등록 갱신은 운영진에게 요청합니다. Vercel 또는 Cloudflare 계정 초대는 필요하지 않습니다.
 
 [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md)
 
@@ -99,15 +99,17 @@ D1을 사용하는 기능은 Wrangler로 실행하세요. Node 서버만 실행�
 
 ## 배포와 확인
 
-팀 레포에서 작업 브랜치의 PR을 `main`에 머지하면 main CI 성공 후 자동 배포됩니다.
+팀 레포에서 작업 브랜치의 PR을 `main`에 머지하면 main CI 성공 후 미적용 SQL을 원격 D1에 적용하고 앱을 배포합니다. SQL 적용 실패 시 앱 배포도 중단됩니다.
 PR 검사만 성공하거나 main CI가 실패한 경우에는 배포되지 않습니다.
 서버는 Cloudflare Workers Free, DB는 팀별 D1입니다. 별도 Vercel 배포는 사용하지 않습니다.
 CI 성공과 배포 완료는 별개이며, 배포 로그·커밋 SHA는 운영진이 확인할 수 있습니다.
 `/api/health`는 서버 상태, `/api/ready`는 실제 D1 연결(`SELECT 1`)을 확인합니다.
 이 상태 검사만으로 기능의 데이터 저장·조회까지 검증되는 것은 아닙니다.
 
-DB 변경은 `cloudflare/migrations/`의 새 SQL 파일로 관리하고, **해당 스키마를 쓰는 코드의
-머지 전에** 운영진에게 원격 적용을 요청하세요. 코드 배포가 SQL을 자동 적용하지 않습니다.
+DB 변경은 `cloudflare/migrations/`의 새 SQL 파일로 코드와 함께 PR에 포함하세요.
+main CI 성공 후 해당 커밋의 미적용 SQL이 팀 전용 D1에 자동 적용됩니다. 운영진의 수동 적용은 필요하지 않습니다.
+적용한 파일은 수정·삭제하지 말고 새 보정 SQL을 추가하세요. 마이그레이션 이후 앱 배포가 실패해도 DB 변경은 유지되므로,
+기존 앱과 호환되는 스키마 변경을 사용하세요. 코드 revert는 DB를 되돌리지 않습니다.
 Function 스키마·익스텐션·커맨드 메타데이터 변경 후에는 앱 등록 갱신도 요청합니다.
 
 ## Project map
