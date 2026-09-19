@@ -923,12 +923,14 @@ function App() {
           className="ff-scroll"
           ref={scrollRef}
         >
-          {SHOW_DEMO_VOICE && session && screen.kind === 'student' && (
-            <DemoVoice
-              key={session.id}
-              messages={session.messages}
-            />
-          )}
+          {(SHOW_DEMO_VOICE || data?.demoVoice) &&
+            session &&
+            screen.kind === 'student' && (
+              <DemoVoice
+                key={session.id}
+                messages={session.messages}
+              />
+            )}
           {error && (
             <ErrorNotice
               error={error}

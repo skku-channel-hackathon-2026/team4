@@ -698,6 +698,8 @@ export const FailfairWamArgsSchema = z.object({
    */
   chatToken: z.string().default(""),
   mode: ModeSchema.optional(),
+  /** 발표용 학생 화면에서 음성 시연 패널을 노출할지 서버가 결정한다. */
+  demoVoice: z.boolean().default(false),
   /** 호스트가 안 줄 수도 있어 서버가 함께 넣어 준다 (튜토리얼과 동일). */
   appId: z.string().optional(),
   channelId: z.string().optional(),

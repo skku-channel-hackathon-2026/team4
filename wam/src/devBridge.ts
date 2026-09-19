@@ -38,6 +38,7 @@ export async function installDevBridge(): Promise<void> {
     chatId: 'dev-group',
     chatType: 'group',
     chatTitle: '앱_개발_검증',
+    demoVoice: true,
     // 실제 호스트에서는 서버가 `open`에서 서명해 내려 준다. fake 모드에서는 자리만 채운다.
     chatToken: 'dev-chat-token',
     appearance: 'light',

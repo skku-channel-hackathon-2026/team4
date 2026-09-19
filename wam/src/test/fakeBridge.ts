@@ -162,6 +162,7 @@ export function installFakeBridge(): FakeBridge {
           chatId: 'test-chat',
           chatType: 'group',
           chatTitle: '앱_개발_검증',
+          demoVoice: true,
           appearance: 'light',
         }) as Record<string, unknown>
       )[key],

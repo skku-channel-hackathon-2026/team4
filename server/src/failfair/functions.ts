@@ -216,6 +216,8 @@ export class FailfairFunctions {
           chatTitle,
           chatToken,
           mode: mode.success ? mode.data : undefined,
+          // 채널톡 WAM URL에는 로컬 쿼리 파라미터가 없으므로 서버가 직접 켠다.
+          demoVoice: true,
           // 호스트가 주지 않는 방(예: 나와의 대화방)도 있어 서버가 함께 넣는다.
           appId,
           channelId: ctx.channel.id,
