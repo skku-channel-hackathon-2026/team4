@@ -123,10 +123,9 @@ export async function installDevBridge(): Promise<void> {
     model?: string
   } = { provider: 'rule', source: 'none' }
   const sessions = new Map<string, SessionView & { asked: number }>()
+  // 서버와 같이 추가 질문은 마감 하나뿐이다.
   const QUESTIONS = [
-    '무슨 일인지 알겠어요. 언제까지 해결해야 해요? 남은 시간이나 마감을 편하게 말해 주세요.',
-    '지금까지 된 건 어디까지고, 남은 건 뭐예요?',
-    '지금 머릿속에 있는 선택지가 있어요? 없으면 없다고 해도 괜찮아요.',
+    '무슨 일인지 알겠어요. 대략 언제까지 해결해야 해요? 정확하지 않아도 돼요.',
   ]
 
   const wait = () => new Promise((resolve) => window.setTimeout(resolve, 300))

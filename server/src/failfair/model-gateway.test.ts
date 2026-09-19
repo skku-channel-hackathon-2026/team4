@@ -38,7 +38,7 @@ test("keyword extractors read urgency, deadline, actions, and problem type", () 
   assert.equal(detectProblemType("team_project", text), "unreachable_member");
 });
 
-test("rule-based gateway asks for the first missing field, then confirms", async () => {
+test("rule-based gateway asks only for the deadline, then confirms", async () => {
   const gateway = new RuleBasedGateway();
   const first = await gateway.analyze({
     category: "team_project",
@@ -62,7 +62,11 @@ test("rule-based gateway asks for the first missing field, then confirms", async
     questionCount: 1,
   });
   assert.equal(second.situation.deadline.urgency, "today");
-  assert.equal(second.pendingField, "progress");
+  // 마감을 들었으면 더 묻지 않는다. 진행 상황·고려 중인 행동은 비어 있어도 미확인으로 남기지 않는다.
+  assert.equal(second.readyToConfirm, true);
+  assert.equal(second.pendingField, undefined);
+  assert.ok(!second.situation.unknowns.includes("진행 상황"));
+  assert.ok(!second.situation.unknowns.includes("고려 중인 행동"));
 
   // 진행 상황을 묻는 중에 명시적인 마감을 말하면 마감이 갱신되고 진행은 비어 있어야 한다.
   const deadlineWhileProgress = await gateway.analyze({
@@ -92,10 +96,25 @@ test("rule-based gateway asks for the first missing field, then confirms", async
   assert.match(summarizeSituation(third.situation), /8시간 남았어요/);
 });
 
+test("a message that already has a deadline gets no follow-up question at all", async () => {
+  const gateway = new RuleBasedGateway();
+  const result = await new RuleBasedGateway().analyze({
+    category: "team_project",
+    situation: empty("team_project"),
+    messages: [],
+    message:
+      "발표까지 8시간 남았는데 팀원이 잠수탔어요. 혼자 다 할지 고민이에요",
+    questionCount: 0,
+  });
+  assert.equal(result.readyToConfirm, true);
+  assert.equal(result.nextQuestion, undefined);
+  assert.deepEqual(result.situation.unknowns, []);
+  void gateway;
+});
+
 test("questions lead with what the student just said instead of reading a field name", async () => {
   const gateway = new RuleBasedGateway();
-  const message =
-    "발표까지 8시간 남았는데 팀원이 잠수탔어요. 혼자 다 할지 교수님께 말할지 고민이에요";
+  const message = "팀원이 잠수탔어요. 혼자 다 할지 교수님께 말할지 고민이에요";
   const result = await gateway.analyze({
     category: "team_project",
     situation: empty("team_project"),
@@ -104,9 +123,9 @@ test("questions lead with what the student just said instead of reading a field 
     questionCount: 0,
   });
   assert.ok(result.nextQuestion);
-  // 방금 말한 마감과 행동을 한 구절로 받아 준 뒤에 질문이 온다.
-  assert.match(result.nextQuestion, /빠듯하네요/);
+  // 방금 말한 행동을 한 구절로 받아 준 뒤에 질문이 온다. 질문은 대략의 마감 하나뿐이다.
   assert.match(result.nextQuestion, /혼자 마무리, 교수님께 상황 전달 사이에서/);
+  assert.match(result.nextQuestion, /대략 언제까지/);
   assert.match(result.nextQuestion, /\?$/);
   // 설문지처럼 읽히는 괄호 예시는 없다.
   assert.doesNotMatch(result.nextQuestion, /\(예:/);

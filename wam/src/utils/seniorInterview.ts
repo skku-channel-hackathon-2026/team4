@@ -16,6 +16,11 @@ import {
  * 선배 인터뷰 대본. 실패담은 원래 서사 순서가 있어서, 그 순서대로 하나씩 물으면
  * CaseSubmission이 채워진다. 제목·첫 행동처럼 시스템이 필요한 값은 답에서 만든다.
  * 선배에게는 "어떤 일이 있었고 → 뭘 했고 → 어떻게 됐고 → 뭘 잃었나"만 묻는다.
+ *
+ * 처음부터 묻는 건 여덟 단계뿐이다: 상황 → 문제 유형(칩) → 행동(최대 둘) → 행동 태그(칩)
+ * → 결과 → 상태(칩) → 잃은 것 → SOS 허용(칩). 조건·이후 경과·미해결·헛수고·전환점·
+ * 확인할 것·도구는 묻지 않고, 정리 카드의 「적기」로만 채운다. 열일곱 단계를 다 물으면
+ * 선배가 중간에 나간다.
  */
 
 export type ReceiptStatus = CaseSubmission['receipt']['status']
@@ -68,6 +73,8 @@ export interface SeniorDraft {
 }
 
 export const MAX_STEPS = 6
+/** 처음부터 진행할 때 묻는 행동 수. 더 있으면 정리 카드에서 「고치기」로 다시 받는다. */
+export const ASKED_STEPS = 2
 export const DEFAULT_TOOL_TITLE = '복구 도구'
 
 export function emptyDraft(category: Category): SeniorDraft {
@@ -170,9 +177,10 @@ export function questionFor(step: SeniorStepId, draft: SeniorDraft): string {
         : '어떤 문제에 가장 가까웠어요?'
     }
     case 'action':
-      if (draft.steps.length === 0) return '그래서 처음에 뭘 했어요?'
+      if (draft.steps.length === 0)
+        return '그래서 뭘 했어요? 한 가지만 적어도 되고, 여러 개면 순서대로 적어도 돼요.'
       if (draft.steps.length === 1)
-        return '그 다음엔 뭘 했어요? 그게 끝이면 아래 버튼을 눌러 주세요.'
+        return '그 다음에 한 게 있으면 적어 주세요. 없으면 「그게 끝이에요」를 눌러 주세요.'
       return '그 다음엔요?'
     case 'actionTag': {
       const guess = guessActionTag(draft)
@@ -181,7 +189,7 @@ export function questionFor(step: SeniorStepId, draft: SeniorDraft): string {
         : '이 행동은 어느 쪽에 가까워요? 새내기가 같은 행동을 고민할 때 이 사례가 연결돼요.'
     }
     case 'outcome':
-      return '그래서 어떻게 됐어요? 바로 일어난 일부터요.'
+      return '그래서 어떻게 됐어요?'
     case 'followUp':
       return '그 뒤로는 어떻게 흘러갔어요?'
     case 'status':
@@ -189,7 +197,7 @@ export function questionFor(step: SeniorStepId, draft: SeniorDraft): string {
     case 'unresolved':
       return '아직 안 풀린 건 뭐예요?'
     case 'cost':
-      return '그거 하느라 뭘 잃었어요? 시간, 돈, 관계, 포기한 것 같은 거요. 이 서비스에서 가장 중요한 한 줄이에요.'
+      return '그거 하느라 뭘 잃었어요? 시간이든 관계든, 한 줄이면 돼요.'
     case 'wasted':
       return '돌아보면 헛수고였던 것도 있었어요?'
     case 'turningPoint':
@@ -203,46 +211,45 @@ export function questionFor(step: SeniorStepId, draft: SeniorDraft): string {
     case 'contact':
       return '마지막이에요. 나중에 새내기가 이 사례를 보고 SOS를 보내도 괜찮아요? 연락처는 저장하지 않고, 이 채팅방으로 알림만 와요.'
     case 'preview':
-      return '이렇게 정리됐어요. 검수를 거쳐 새내기 화면에 보여요. 고칠 곳이 있으면 각 줄의 「고치기」를 눌러 주세요.'
+      return '이렇게 정리됐어요. 검수를 거쳐 새내기 화면에 보여요. 고칠 곳은 「고치기」, 헛수고·전환점·복구 도구처럼 안 물어본 건 「적기」로 더할 수 있어요. 비워 둬도 돼요.'
   }
 }
 
-/** 처음부터 순서대로 진행할 때의 다음 단계 */
+/**
+ * 처음부터 순서대로 진행할 때의 다음 단계. 여덟 단계만 묻는다.
+ * 여기 없는 단계(조건·이후 경과·미해결·헛수고·전환점·확인할 것·도구)는 정리 카드에서
+ * 「적기」로 들어왔을 때만 묻고, 답하면 카드로 돌아간다 (nextStepWhileEditing).
+ */
 export function nextStep(step: SeniorStepId, draft: SeniorDraft): SeniorStepId {
   switch (step) {
     case 'situation':
-      return 'constraints'
-    case 'constraints':
       return 'problemType'
     case 'problemType':
       return 'action'
     case 'action':
       return 'actionTag'
     case 'actionTag':
-      return draft.steps.length >= MAX_STEPS ? 'outcome' : 'action'
+      return draft.steps.length >= ASKED_STEPS ? 'outcome' : 'action'
     case 'outcome':
-      return 'followUp'
-    case 'followUp':
       return 'status'
     case 'status':
-      return draft.status === 'resolved' ? 'cost' : 'unresolved'
-    case 'unresolved':
       return 'cost'
     case 'cost':
-      return 'wasted'
-    case 'wasted':
-      return 'turningPoint'
-    case 'turningPoint':
-      return 'conditions'
-    case 'conditions':
-      return 'tool'
-    case 'tool':
-      return draft.toolBody ? 'toolTitle' : 'contact'
-    case 'toolTitle':
       return 'contact'
     case 'contact':
     case 'preview':
       return 'preview'
+    // 처음 흐름에서는 묻지 않는 단계. 「적기」로 들어왔다가 흐름이 꼬여도 카드로 돌아간다.
+    case 'constraints':
+    case 'followUp':
+    case 'unresolved':
+    case 'wasted':
+    case 'turningPoint':
+    case 'conditions':
+    case 'toolTitle':
+      return 'preview'
+    case 'tool':
+      return draft.toolBody ? 'toolTitle' : 'preview'
   }
 }
 

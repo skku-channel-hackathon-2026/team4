@@ -311,11 +311,10 @@ export function unknownsOf(situation: Situation): string[] {
     ...(situation.deadline.raw.trim() ? ["마감·남은 시간"] : []),
   ]);
   const unknowns = situation.unknowns.filter((field) => !filled.has(field));
+  // 묻지 않은 진행 상황·원하는 결과는 미확인으로 세지 않는다. 대화에서 묻는 건 마감뿐이라,
+  // 나머지를 여기서 줄줄이 붙이면 학생이 답하지 않은 걸 결과마다 탓하는 것처럼 보인다.
   if (!situation.deadline.raw && !unknowns.includes("마감·남은 시간"))
     unknowns.push("마감·남은 시간");
-  if (!situation.progress && !unknowns.includes("진행 상황"))
-    unknowns.push("진행 상황");
-  if (!situation.goal) unknowns.push("원하는 결과");
   return Array.from(new Set(unknowns));
 }
 
