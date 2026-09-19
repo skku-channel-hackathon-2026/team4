@@ -579,9 +579,7 @@ function App() {
             bold
             className="ff-display"
           >
-            성공한 선배의 정답보다,
-            <br />
-            망해본 선배의 다음 한 수.
+            망해본 선배를 전시합니다 ⚰️
           </Text>
           <Text
             as="p"
