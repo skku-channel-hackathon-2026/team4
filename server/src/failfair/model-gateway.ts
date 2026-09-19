@@ -297,6 +297,8 @@ export function createModelGateway(
       key,
       new RuleBasedGateway(),
       env.GEMINI_MODEL ?? "gemini-3.1-flash-lite",
+      undefined,
+      env.ENABLE_CONTEXT_META_WRITE === "true",
     );
   }
   if (env.MODEL_PROVIDER && env.MODEL_PROVIDER !== "rule")

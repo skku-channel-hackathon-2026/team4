@@ -27,6 +27,7 @@ if (chosen && !scenarios.some((s) => s.id === chosen)) {
     new RuleBasedGateway(),
     model,
     observedFetch,
+    process.env.ENABLE_CONTEXT_META_WRITE === "true",
   );
   const results = [];
   for (const scenario of scenarios.filter((s) => !chosen || s.id === chosen)) {

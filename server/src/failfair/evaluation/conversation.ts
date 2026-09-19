@@ -36,10 +36,18 @@ export const scenarios: Scenario[] = [
       {
         message:
           "21학점을 듣고 주 4일 알바해. 생활비 때문에 알바는 못 줄여. 과제를 못 내고 있어. 낙제만 피하고 싶어.",
-        check: (o) =>
-          /생활비/.test(JSON.stringify(o.situation))
+        check: (o) => {
+          // 모델이 "생활비" 원문을 "생계·경제적 이유" 등으로 바꿔 써도
+          // 제약을 보존했으면 통과한다. 리터럴 문자열이 아니라 의미를 검사한다.
+          const captured = [
+            o.situation.constraints.join(" "),
+            o.situation.situation,
+          ].join(" ");
+          return /생활비|생계|경제|비용|돈|월세|고정\s*지출/.test(captured) &&
+            /알바|아르바이트|근로/.test(captured)
             ? []
-            : ["생활비 제약 누락"],
+            : ["생활비·알바 제약 누락"];
+        },
       },
       {
         message:
