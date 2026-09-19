@@ -165,13 +165,16 @@ export default function DemoVoice({ messages }: { messages: Message[] }) {
   }
 
   useEffect(() => {
-    const added = messages.slice(seen.current)
+    const hasNewMessage = messages.length > seen.current
+    const latest = messages[messages.length - 1]
     seen.current = messages.length
-    if (enabledRef.current) {
-      queue.current.push(...added)
+    if (enabledRef.current && hasNewMessage && latest) {
+      // A render can replace the whole session history. Speak only the bubble
+      // that was just appended: student send first, then the assistant reply.
+      queue.current.push(latest)
       void drain()
     }
-    // Only new conversation messages trigger playback, never historical reloads.
+    // Only the newest conversation bubble triggers playback, never history.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages])
 
