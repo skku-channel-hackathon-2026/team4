@@ -18,13 +18,14 @@ const server = createServer((request, response) => {
 const http = httpServerHandler(server);
 export default {
   async fetch(request, bindings, context) {
-    if (new URL(request.url).pathname === "/api/tts") {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/") {
+      return Response.redirect(new URL("/resource/wam/tutorial/", url), 302);
+    }
+    if (url.pathname === "/api/tts") {
       return demoTts(request, bindings);
     }
-    if (
-      new URL(request.url).pathname === "/api/ready" &&
-      request.method === "GET"
-    ) {
+    if (url.pathname === "/api/ready" && request.method === "GET") {
       try {
         await bindings.DB.prepare("SELECT 1 AS ok").first();
         return Response.json({ ok: true });
