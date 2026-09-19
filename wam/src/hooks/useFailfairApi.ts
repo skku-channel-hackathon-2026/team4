@@ -12,7 +12,9 @@ import {
   type ReplyOutput,
   type SessionView,
   type Situation,
+  type SosMessage,
   type SosRequest,
+  type SosThread,
   type StartOutput,
 } from '@tutorial/shared'
 
@@ -116,18 +118,26 @@ export interface FailfairApi {
   // SOS
   sosRequest(
     sessionId: string,
-    caseId: string,
+    /** 비우면 서버가 연락 가능한 선배를 매칭한다 (결과에 연결된 선배 우선). */
+    caseId: string | undefined,
     message: string,
-    /** `open`이 내려 준 서명된 채팅방 표식. 서버가 알림 대상을 이 값으로만 정한다. */
+    /** `open`이 내려 준 서명된 채팅방 표식. 서버가 그룹 봇 알림 대상을 이 값으로만 정한다. */
     chatTarget: string,
     /** 전송 단위 ID. 재시도에도 같은 값을 넘기면 응답만 잃은 요청이 새 SOS로 늘지 않는다. */
     requestId?: string
-  ): Promise<{ request: SosRequest; notified: boolean }>
+  ): Promise<{ request: SosRequest; notified: boolean; directChat: boolean }>
   sosList(role: 'student' | 'senior'): Promise<{ requests: SosRequest[] }>
   sosRespond(
     sosId: string,
     status: 'accepted' | 'declined'
-  ): Promise<{ request: SosRequest; notified: boolean }>
+  ): Promise<{ request: SosRequest; notified: boolean; directChat: boolean }>
+  /** 요청의 최신 상태와 앱 안에서 주고받은 말. 두 당사자만. */
+  sosThread(sosId: string): Promise<SosThread>
+  sosSend(
+    sosId: string,
+    text: string,
+    requestId?: string
+  ): Promise<{ message: SosMessage }>
   // 런타임 모델 설정
   getModel(): Promise<ModelStatus>
   setModel(input: {
@@ -196,13 +206,16 @@ export function createFailfairApi(appId: string): FailfairApi {
     ) =>
       call(appId, F.sosRequest, {
         sessionId,
-        caseId,
+        ...(caseId ? { caseId } : {}),
         message,
         chatTarget,
         requestId,
       }),
     sosList: (role) => call(appId, F.sosList, { role }),
     sosRespond: (sosId, status) => call(appId, F.sosRespond, { sosId, status }),
+    sosThread: (sosId) => call(appId, F.sosThread, { sosId }),
+    sosSend: (sosId, text, requestId = newRequestId()) =>
+      call(appId, F.sosSend, { sosId, text, requestId }),
     getModel: () => call(appId, F.getModel, {}),
     setModel: (input) => call(appId, F.setModel, { ...input }),
   }

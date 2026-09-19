@@ -5,6 +5,7 @@ import { withDatabase } from "../database.js";
 import { createTestDatabase } from "../test-database.js";
 import {
   SosService,
+  chooseContactableCase,
   d1SosStore,
   isContactable,
   sosRequestedText,
@@ -307,5 +308,101 @@ test("저장된 요청은 스키마를 통과한다", async () => {
       await service.listFor("c1", "student-1", "student")
     )[0]!;
     assert.deepEqual(stored, request);
+  });
+});
+
+test("매칭: 결과에 연결된 연락 가능한 선배를 우선하고, 없으면 같은 분야의 최근 선배", () => {
+  const older = realCase({
+    id: "case-old",
+    authorManagerId: "senior-old",
+    createdAt: 100,
+  });
+  const newer = realCase({
+    id: "case-new",
+    authorManagerId: "senior-new",
+    createdAt: 200,
+  });
+  const mine = realCase({ id: "case-mine", authorManagerId: "student-1" });
+  const candidates = [DEMO_CASES[0]!, older, newer, mine];
+  // 결과에 연결된 사례가 연락 가능하면 그것. 가상·본인 사례는 건너뛴다.
+  assert.equal(
+    chooseContactableCase(
+      candidates,
+      [DEMO_CASES[0]!.id, "case-mine", "case-old"],
+      "student-1",
+    )?.id,
+    "case-old",
+  );
+  // 결과에 연결된 선배가 없으면 가장 최근 등록.
+  assert.equal(
+    chooseContactableCase(candidates, ["nothing"], "student-1")?.id,
+    "case-new",
+  );
+  assert.equal(
+    chooseContactableCase([DEMO_CASES[0]!, mine], [], "student-1"),
+    undefined,
+  );
+});
+
+test("스레드: 수락 뒤 두 당사자만 말을 주고받고, 같은 requestId는 한 번만 쌓인다", async () => {
+  await inDatabase(async (service) => {
+    const { request } = await service.request(ask(), 1000);
+    // 대기 중에는 보낼 수 없다.
+    await assert.rejects(
+      () => service.send("c1", "student-1", request.id, "m-0", "안녕하세요"),
+      /only after the senior accepts/,
+    );
+    await service.respond("c1", "senior-1", request.id, "accepted", 2000);
+
+    const first = await service.send(
+      "c1",
+      "student-1",
+      request.id,
+      "m-1",
+      "발표 자료가 반밖에 없어요",
+      3000,
+    );
+    assert.equal(first.role, "student");
+    // 응답만 잃은 재전송: 같은 말이 두 번 쌓이지 않고 처음 저장한 말이 돌아온다.
+    const again = await service.send(
+      "c1",
+      "student-1",
+      request.id,
+      "m-1",
+      "발표 자료가 반밖에 없어요",
+      3500,
+    );
+    assert.equal(again.id, first.id);
+    const reply = await service.send(
+      "c1",
+      "senior-1",
+      request.id,
+      "m-2",
+      "핵심 3장만 먼저 만드세요",
+      4000,
+    );
+    assert.equal(reply.role, "senior");
+
+    const seen = await service.thread("c1", "senior-1", request.id);
+    assert.equal(seen.request.status, "accepted");
+    assert.deepEqual(
+      seen.messages.map((message) => message.text),
+      ["발표 자료가 반밖에 없어요", "핵심 3장만 먼저 만드세요"],
+    );
+    // 제3자는 존재 여부도 알 수 없다.
+    await assert.rejects(
+      () => service.thread("c1", "someone-else", request.id),
+      /not found/,
+    );
+    await assert.rejects(
+      () => service.send("c1", "someone-else", request.id, "m-3", "끼어들기"),
+      /not found/,
+    );
+
+    // DM 방 ID는 한 번만 붙고 저장된 요청에 남는다.
+    await service.attachDirectChat(request, "dm-1");
+    await service.attachDirectChat(request, "dm-2");
+    const stored = (await service.listFor("c1", "student-1", "student"))[0]!;
+    assert.equal(stored.directChatId, "dm-1");
   });
 });

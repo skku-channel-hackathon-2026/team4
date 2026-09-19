@@ -509,3 +509,22 @@ ol.ff-list > li {
     grid-column: 1 / -1;
   }
 }
+
+/* ------------------------------------------------------------------ SOS 스레드 */
+
+/* 상자 안에 들어가는 짧은 대화. 너무 길어지면 안에서만 스크롤한다. */
+.ff-sos-log {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.ff-sos-log .ff-bubble-row {
+  gap: 2px;
+}
+
+/* 첫 화면의 SOS 수신함 진입. 대기 건수가 있으면 강조색 띠가 붙는다. */
+.ff-big-sos {
+  border-style: solid;
+  border-left: 3px solid var(--ff-accent);
+}

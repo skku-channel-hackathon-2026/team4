@@ -57,7 +57,12 @@ const COPY: Record<
   },
   CHAT_TARGET_REQUIRED: {
     message: '여기서는 SOS를 보낼 수 없어요.',
-    hint: '선배와 이어서 대화하려면 그룹 채팅방에서 /망선박을 열어 주세요. 앱이 1:1 방을 새로 만들지는 못해요.',
+    hint: '채팅창에서 /망선박을 다시 열어 주세요.',
+    action: 'none',
+  },
+  NO_SENIOR_AVAILABLE: {
+    message: '아직 연락을 허용한 선배가 없어요.',
+    hint: '이 고민 분야에 실제 경험을 남기고 SOS를 허용한 선배가 등록되면 바로 보낼 수 있어요.',
     action: 'none',
   },
 }

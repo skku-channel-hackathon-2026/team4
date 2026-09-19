@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { EmptyState } from '@channel.io/app-sdk-wam-ui'
 import { FolderOffIcon } from '@channel.io/bezier-icons'
 import { Button, HStack, Text, VStack } from '@channel.io/bezier-react/beta'
@@ -21,6 +22,8 @@ interface ComparePageProps {
   /** 검색이 실패해 결과가 비어 있는 경우. 오류 안내는 배너가 맡는다. */
   failed: boolean
   helpfulIds: ReadonlySet<string>
+  /** 결과 위에 붙는 SOS 상자. 결과가 있을 때만 넘긴다. */
+  sosSlot?: ReactNode
   onOpenCase: (caseId: string, resultId: string) => void
   onHelpful: (resultId: string) => void
   onEditActions: () => void
@@ -44,6 +47,7 @@ function ComparePage({
   comparingCount,
   failed,
   helpfulIds,
+  sosSlot,
   onOpenCase,
   onHelpful,
   onEditActions,
@@ -147,6 +151,8 @@ function ComparePage({
           )}
         </VStack>
       </div>
+
+      {sosSlot}
 
       {withCase.length === 0 && (
         <div className="ff-box ff-warn">

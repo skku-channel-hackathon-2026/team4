@@ -112,8 +112,14 @@ function App() {
   const [caseDetail, setCaseDetail] = useState<Case | null>(null)
   const [activeResultId, setActiveResultId] = useState<string | null>(null)
   const [contactable, setContactable] = useState(false)
+  /** 이 대화에서 가장 최근에 보낸(끝나지 않은) SOS. 결과 화면 맨 위 상자가 보여 준다. */
   const [sos, setSos] = useState<SosRequest | null>(null)
+  /** 지금 열어 둔 사례의 선배에게 보낸 SOS. 사례 상세 상자가 보여 준다. */
+  const [caseSos, setCaseSos] = useState<SosRequest | null>(null)
   const [sosNotified, setSosNotified] = useState<boolean | null>(null)
+  const [sosDirect, setSosDirect] = useState<boolean | null>(null)
+  /** 첫 화면에서 보여 줄, 나에게 온 대기 중 SOS 수. 못 읽으면 null. */
+  const [inboxCount, setInboxCount] = useState<number | null>(null)
   const [helpfulIds, setHelpfulIds] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<FailfairError | null>(null)
@@ -179,6 +185,26 @@ function App() {
         : { kind: 'student', step: 'category' }
     )
   }, [data?.mode])
+
+  // 첫 화면에 설 때마다 나에게 온 SOS를 센다. 선배가 앱을 열자마자 요청을 알아채게.
+  useEffect(() => {
+    if (screen.kind !== 'home' || !data) return
+    let cancelled = false
+    api
+      .sosList('senior')
+      .then(({ requests }) => {
+        if (cancelled) return
+        setInboxCount(
+          requests.filter((request) => request.status === 'pending').length
+        )
+      })
+      .catch(() => {
+        if (!cancelled) setInboxCount(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, data, screen.kind])
 
   const run = useCallback(
     async (
@@ -456,6 +482,15 @@ function App() {
         results: compared.results,
       })
       setNotice(compared.notice)
+      // 결과 위 SOS 상자: 이미 보낸(끝나지 않은) 요청이 있으면 그 상태를 이어서 보여 준다.
+      try {
+        const { requests } = await api.sosList('student')
+        setSos(
+          requests.find((request) => request.status !== 'declined') ?? null
+        )
+      } catch {
+        // 못 읽어도 새 요청은 보낼 수 있다.
+      }
     }, '사례를 찾지 못했어요.')
   }
 
@@ -471,13 +506,12 @@ function App() {
       setCaseDetail(item)
       setActiveResultId(resultId)
       setContactable(Boolean(canSos))
-      setSos(null)
-      setSosNotified(null)
+      setCaseSos(null)
       setScreen({ kind: 'student', step: 'case' })
       if (canSos) {
         try {
           const { requests } = await api.sosList('student')
-          setSos(
+          setCaseSos(
             requests.find(
               (request) =>
                 request.caseId === item.id && request.status !== 'declined'
@@ -503,32 +537,78 @@ function App() {
       .catch(() => undefined)
   }
 
-  const sendSos = (message: string) => {
-    if (!session || !caseDetail) return
+  /**
+   * SOS를 보낸다. `caseId`가 있으면 그 사례의 선배에게, 없으면 서버가 결과에 연결된
+   * 연락 가능한 선배(없으면 같은 분야의 선배)를 골라 준다.
+   */
+  const sendSos = (message: string, caseId?: string) => {
+    if (!session) return
     // 전송마다 한 번만 만들고 "다시 시도"에도 그대로 쓴다. 응답만 잃은 요청이 새 SOS로 늘지 않는다.
     const requestId = newRequestId()
     void run(async () => {
-      const { request, notified } = await api.sosRequest(
+      const { request, notified, directChat } = await api.sosRequest(
         session.id,
-        caseDetail.id,
+        caseId,
         message,
         data?.chatToken ?? '',
         requestId
       )
       setSos(request)
+      if (caseDetail && request.caseId === caseDetail.id) setCaseSos(request)
       setSosNotified(notified)
+      setSosDirect(directChat)
     }, 'SOS를 보내지 못했어요.')
   }
 
+  /** 스레드 폴링이나 새로고침으로 알게 된 최신 요청을 두 상자에 반영한다. */
+  const applySos = useCallback((request: SosRequest) => {
+    setSos((current) =>
+      current && current.id === request.id ? request : current
+    )
+    setCaseSos((current) =>
+      current && current.id === request.id ? request : current
+    )
+  }, [])
+
   const refreshSos = () => {
-    if (!caseDetail) return
     void run(async () => {
       const { requests } = await api.sosList('student')
-      setSos(
-        requests.find((request) => request.caseId === caseDetail.id) ?? null
-      )
+      const latest =
+        requests.find((request) => request.status !== 'declined') ??
+        requests[0] ??
+        null
+      setSos(latest)
+      if (caseDetail)
+        setCaseSos(
+          requests.find((request) => request.caseId === caseDetail.id) ?? null
+        )
     }, 'SOS 상태를 불러오지 못했어요.')
   }
+
+  /** 두 SOS 상자가 같은 값을 쓴다. */
+  const sosBoxCommon = {
+    busy,
+    notified: sosNotified,
+    directChat: sosDirect,
+    currentChatId: data?.chatId ?? '',
+    me: data?.managerId ?? '',
+    onRefresh: refreshSos,
+    onRequestChange: applySos,
+    loadThread: api.sosThread,
+    sendMessage: api.sosSend,
+  }
+
+  /** 결과 화면 SOS 폼의 기본 문구: 확인된 상황 한 줄 + 마감. */
+  const sosDefaultMessage = session
+    ? [
+        session.situation.situation,
+        session.situation.deadline.raw &&
+          `마감: ${session.situation.deadline.raw}`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+        .slice(0, 400)
+    : ''
 
   const restart = () => {
     sessionRef.current = null
@@ -540,7 +620,9 @@ function App() {
     setCaseDetail(null)
     setContactable(false)
     setSos(null)
+    setCaseSos(null)
     setSosNotified(null)
+    setSosDirect(null)
     setNotice('')
     setError(null)
     setFailedAts(new Set())
@@ -713,6 +795,28 @@ function App() {
               등록한 사례는 검수를 거쳐 다른 학생에게 보여질 수 있어요.
             </Text>
           </button>
+          <button
+            type="button"
+            className={inboxCount ? 'ff-big ff-big-sos' : 'ff-big'}
+            onClick={() => setScreen({ kind: 'senior', tab: 'sos' })}
+          >
+            <Text
+              as="span"
+              typo="16"
+              bold
+            >
+              🆘 나에게 온 SOS
+              {inboxCount ? ` · 답 기다리는 중 ${inboxCount}건` : ''}
+            </Text>
+            <Text
+              as="span"
+              typo="13"
+              color="text-neutral-light"
+            >
+              내 사례를 본 새내기가 보낸 SOS를 수락하고, 앱 안에서 바로
+              대화해요.
+            </Text>
+          </button>
           <HStack justify="end">
             <Button
               size="xs"
@@ -755,6 +859,9 @@ function App() {
         <SosInboxPage
           listRequests={listSeniorSos}
           respond={api.sosRespond}
+          loadThread={api.sosThread}
+          sendMessage={api.sosSend}
+          me={data?.managerId ?? ''}
           currentChatId={data?.chatId ?? ''}
         />
       )
@@ -820,6 +927,15 @@ function App() {
             comparingCount={comparingCount}
             failed={Boolean(error)}
             helpfulIds={helpfulIds}
+            sosSlot={
+              <SosBox
+                key={sos?.id ?? 'new'}
+                request={sos}
+                defaultMessage={sosDefaultMessage}
+                onSend={(message) => sendSos(message)}
+                {...sosBoxCommon}
+              />
+            }
             onOpenCase={openCase}
             onHelpful={helpful}
             onEditActions={() => setScreen({ kind: 'student', step: 'chat' })}
@@ -836,15 +952,14 @@ function App() {
             item={caseDetail}
             onToolCopied={toolCopied}
             sosSlot={
-              contactable || sos ? (
+              contactable || caseSos ? (
                 <SosBox
-                  request={sos}
-                  busy={busy}
-                  notified={sosNotified}
-                  currentChatId={data?.chatId ?? ''}
-                  canSend={Boolean(data?.chatToken)}
-                  onSend={sendSos}
-                  onRefresh={refreshSos}
+                  key={caseSos?.id ?? 'new'}
+                  request={caseSos}
+                  targetTitle={caseDetail.title}
+                  defaultMessage={sosDefaultMessage}
+                  onSend={(message) => sendSos(message, caseDetail.id)}
+                  {...sosBoxCommon}
                 />
               ) : undefined
             }
