@@ -7,7 +7,11 @@ if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin)) {
 for (const path of ["/api/health", "/api/ready"]) {
   const response = await fetch(origin + path);
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { ok: true });
+  const json = await response.json();
+  assert.equal(json.ok, true);
+  // health는 실제 기동된 모델 게이트웨이를 알린다. CI는 rule, 로컬 .dev.vars에 따라 gemini일 수 있다.
+  if (path === "/api/health")
+    assert.ok(["gemini", "rule"].includes(json.model), "health.model missing");
 }
 const body =
   '{ "method": "extension.command.metadata.getCommands", "params": {} }';

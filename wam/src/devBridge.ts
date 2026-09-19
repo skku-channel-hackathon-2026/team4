@@ -16,6 +16,10 @@ import {
  * 서버 규칙의 축약판이라 화면 흐름 확인용이며, 실제 매칭 품질은 서버가 기준이다.
  * 프로덕션 빌드에서는 `import.meta.env.DEV`가 false라 아무것도 하지 않는다.
  * 주소 뒤에 `?mode=senior` 처럼 붙이면 호스트 값을 바꿔 볼 수 있다.
+ *
+ * `?bridge=server` (또는 `VITE_DEV_BRIDGE=server`, `pnpm dev:wam:server`)를 붙이면
+ * 가짜 규칙 대신 로컬 Worker(`pnpm dev:cloudflare`, 8787)를 부른다. 실제 서버 로직과
+ * Gemini 대화를 브라우저에서 볼 때 쓴다. 요청은 vite 프록시(/functions)를 거친다.
  */
 export function installDevBridge() {
   if (!import.meta.env.DEV || window.ChannelIOWam) return
@@ -32,6 +36,32 @@ export function installDevBridge() {
   new URLSearchParams(window.location.search).forEach((value, key) => {
     data[key] = value
   })
+
+  const common = {
+    getWamData: (key: string) => data[key],
+    setSize: (size: unknown) => console.info('[dev bridge] setSize', size),
+    close: () => console.info('[dev bridge] close'),
+    callNativeFunction: async () => {
+      throw new Error('dev bridge: native functions are unavailable')
+    },
+  }
+
+  if (
+    data.bridge === 'server' ||
+    import.meta.env.VITE_DEV_BRIDGE === 'server'
+  ) {
+    window.ChannelIOWam = {
+      ...common,
+      callFunction: createServerCall(data),
+    } as ChannelIOWam
+    console.info(
+      '[dev bridge] server 모드: PUT /functions/v1 → vite 프록시 → 로컬 Worker 127.0.0.1:8787'
+    )
+    return
+  }
+  console.info(
+    '[dev bridge] fake 모드: 브라우저 안 축약 규칙 (서버·Gemini 호출 없음)'
+  )
 
   const cases: Case[] = [...DEMO_CASES]
   const sessions = new Map<string, SessionView & { asked: number }>()
@@ -104,11 +134,16 @@ export function installDevBridge() {
         if (!session) throw new Error('dev bridge: session not found')
         const text = String(params.message)
         const s = session.situation
-        if (!s.situation) s.situation = text
+        // 서버의 SKIP_PATTERN 축약판. 건너뛴 답은 필드에 넣지 않고 미확인으로 남긴다.
+        const skipped = /모르겠|말하고 싶지 않|건너|스킵|패스|글쎄/.test(text)
+        const FIELD_LABELS = ['마감·남은 시간', '진행 상황', '고려 중인 행동']
+        if (skipped && s.situation) {
+          const label = FIELD_LABELS[session.asked - 1]
+          if (label && !s.unknowns.includes(label)) s.unknowns.push(label)
+        } else if (!s.situation) s.situation = text
         else if (session.asked === 1) s.deadline.raw = text
         else if (session.asked === 2) s.progress = text
-        else if (session.asked === 3 && !/모르겠/.test(text))
-          s.consideredActions = [text]
+        else if (session.asked === 3) s.consideredActions = [text]
         const detected = ACTION_TAGS[session.category]
           .filter((action) =>
             action.keywords.some((keyword) => text.includes(keyword))
@@ -298,14 +333,64 @@ export function installDevBridge() {
     return result as T
   }
 
-  const bridge: ChannelIOWam = {
-    getWamData: (key) => data[key],
-    setSize: (size) => console.info('[dev bridge] setSize', size),
-    close: () => console.info('[dev bridge] close'),
-    callFunction,
-    callNativeFunction: async () => {
-      throw new Error('dev bridge: native functions are unavailable')
-    },
+  window.ChannelIOWam = { ...common, callFunction } as ChannelIOWam
+}
+
+/**
+ * 로컬 Worker를 부르는 callFunction. 채널톡 호스트가 하는 일(서명, context 주입)을 흉내 낸다.
+ * 서명 키는 로컬 .dev.vars의 SIGNING_KEY와 같아야 한다. 기본값은 이 레포의 로컬 기본값("11"×32)이고
+ * `VITE_DEV_SIGNING_KEY`로 바꿀 수 있다. 실서버 키는 절대 여기 두지 않는다.
+ */
+function createServerCall(data: Record<string, unknown>) {
+  const keyHex: string = import.meta.env.VITE_DEV_SIGNING_KEY ?? '11'.repeat(32)
+  const keyBytes = Uint8Array.from(keyHex.match(/.{1,2}/g) ?? [], (pair) =>
+    parseInt(pair, 16)
+  )
+  const key = crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  return async <T>({ name, params }: CallFunctionArgs): Promise<T> => {
+    const body = JSON.stringify({
+      method: name,
+      params,
+      context: {
+        caller: { type: 'manager', id: String(data.managerId) },
+        channel: { id: String(data.channelId) },
+      },
+    })
+    const signature = await crypto.subtle.sign(
+      'HMAC',
+      await key,
+      new TextEncoder().encode(body)
+    )
+    const response = await fetch('/functions/v1', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        'x-signature': btoa(String.fromCharCode(...new Uint8Array(signature))),
+      },
+      body,
+    })
+    if (!response.ok)
+      throw new Error(
+        `로컬 Worker 응답 ${response.status}. 'pnpm dev:cloudflare'가 8787에서 떠 있는지 확인해 주세요.`
+      )
+    const json = (await response.json()) as {
+      result?: T
+      error?: { type?: string; message?: string; data?: unknown }
+    }
+    if (json.error)
+      throw Object.assign(
+        new Error(json.error.message ?? '요청이 거부됐어요'),
+        {
+          type: json.error.type,
+          data: json.error.data,
+        }
+      )
+    return json.result as T
   }
-  window.ChannelIOWam = bridge
 }

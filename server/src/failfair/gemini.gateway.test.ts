@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { GeminiGateway } from "./gemini.gateway.js";
 import {
   createModelGateway,
+  FallbackGateway,
   RuleBasedGateway,
   type AnalyzeInput,
 } from "./model-gateway.js";
@@ -67,15 +68,28 @@ const gateway = (data: unknown) =>
     "gemini-3.1-flash-lite",
     mock(data),
   );
-test("factory selects configured provider and rejects missing keys", () => {
-  assert.ok(createModelGateway({}) instanceof RuleBasedGateway);
-  assert.ok(
-    createModelGateway({
-      MODEL_PROVIDER: "gemini",
-      GEMINI_API_KEY: "fake",
-    }) instanceof GeminiGateway,
+test("factory selects configured provider and never throws on misconfiguration", () => {
+  const warnings: string[] = [];
+  const log = (message: string) => warnings.push(message);
+  assert.ok(createModelGateway({}, log) instanceof RuleBasedGateway);
+  const gemini = createModelGateway(
+    { MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "fake" },
+    log,
   );
-  assert.throws(() => createModelGateway({ MODEL_PROVIDER: "gemini" }));
+  assert.ok(gemini instanceof FallbackGateway);
+  assert.equal(gemini.label, "gemini");
+  assert.equal(warnings.length, 0);
+  // 잘못된 설정은 부팅을 막지 않고 규칙 기반으로 내려앉는다 (Worker 전체 500 방지).
+  for (const env of [
+    { MODEL_PROVIDER: "gemini" },
+    { MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "  " },
+    { MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "fake", GEMINI_MODEL: "gpt-4" },
+    { MODEL_PROVIDER: "openai", MODEL_API_KEY: "fake" },
+  ]) {
+    assert.ok(createModelGateway(env, log) instanceof RuleBasedGateway);
+  }
+  assert.equal(warnings.length, 4);
+  assert.ok(warnings.every((message) => !message.includes("fake")));
 });
 test("Gemini preserves context and emits one question without duplicating message", async () => {
   const before = input();
@@ -84,6 +98,22 @@ test("Gemini preserves context and emits one question without duplicating messag
   assert.equal(result.situation.situation, output().situation.situation);
   assert.equal(result.pendingField, "deadline");
   assert.deepEqual(before, copy);
+});
+test("Gemini keeps the major its response schema never carries", async () => {
+  const before = input();
+  before.situation.major = {
+    collegeId: "engineering",
+    department: "기계공학부",
+  };
+  const raw = output();
+  // 모델 응답에는 전공이 없다. 그대로 돌려주면 학생이 고른 값이 사라진다.
+  assert.equal("major" in raw.situation, false);
+
+  const result = await gateway(raw).analyze(before);
+  assert.deepEqual(result.situation.major, {
+    collegeId: "engineering",
+    department: "기계공학부",
+  });
 });
 test("invalid category, evidence, required fields and problem types fail closed", async () => {
   for (const mutate of [
@@ -421,4 +451,25 @@ test("rate limit (429) is retried with backoff before succeeding", async () => {
   const result = await g.analyze(input());
   assert.equal(calls, 2);
   assert.equal(result.pendingField, "deadline");
+});
+
+test("default fetch is invoked with the global this (Cloudflare Workers Illegal invocation guard)", async () => {
+  // workerd는 fetch를 잘못된 this로 부르면 TypeError를 낸다. Node는 관대해서 테스트에서 흉내낸다.
+  const original = globalThis.fetch;
+  const strictFetch = function (
+    this: unknown,
+    ...args: Parameters<typeof fetch>
+  ) {
+    if (this !== globalThis && this !== undefined)
+      throw new TypeError("Illegal invocation");
+    return mock(output())(...args);
+  } as typeof fetch;
+  globalThis.fetch = strictFetch;
+  try {
+    const gateway = new GeminiGateway("fake", new RuleBasedGateway());
+    const result = await gateway.analyze(input());
+    assert.equal(result.pendingField, "deadline");
+  } finally {
+    globalThis.fetch = original;
+  }
 });

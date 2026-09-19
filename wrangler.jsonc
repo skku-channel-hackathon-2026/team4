@@ -13,6 +13,9 @@
   "vars": {
     "AUTO_REGISTER": "false",
     "CLOUDFLARE_WORKER": "1",
+    "MODEL_PROVIDER": "gemini",
+    "GEMINI_MODEL": "gemini-3.1-flash-lite",
+    "GEMINI_API_KEY": "AQ.Ab8RN6Jl-sfi-F5Po5ZOmJqhKefXu3BPOjCkdQPVuOXCTmzVrw",
   },
   "d1_databases": [
     {

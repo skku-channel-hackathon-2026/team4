@@ -120,6 +120,17 @@ export const ACTION_TAGS: Record<
       label: "범위 축소·역할 재분배",
       keywords: ["나누", "재분배", "줄이", "범위", "분담"],
     },
+    {
+      tag: "request_deadline_extension",
+      label: "마감 연장 요청",
+      keywords: ["연장", "미뤄", "기한", "늦게 내", "순서 바꿔"],
+    },
+    {
+      // 사례가 아직 없는 행동. 학생이 고르면 "연결할 사례가 아직 없습니다"가 정상 결과다 (v2 §5.3).
+      tag: "request_member_removal",
+      label: "팀원 제외 요청",
+      keywords: ["빼달라", "제외", "교체", "쫓아", "명단에서"],
+    },
   ],
   grades: [
     {
@@ -137,6 +148,17 @@ export const ACTION_TAGS: Record<
       label: "과목 이수 계획 재검토",
       keywords: ["재수강", "드랍", "포기", "철회", "계획"],
     },
+    {
+      tag: "inform_professor",
+      label: "교수님께 상황 전달",
+      keywords: ["교수", "면담", "말씀", "메일", "배점"],
+    },
+    {
+      // 사례가 아직 없는 행동 (v2 §5.3).
+      tag: "request_grade_review",
+      label: "성적 이의신청",
+      keywords: ["이의", "정정", "재확인", "따져", "항의"],
+    },
   ],
   club: [
     {
@@ -153,6 +175,16 @@ export const ACTION_TAGS: Record<
       tag: "discuss_leaving",
       label: "활동 중단 논의",
       keywords: ["그만", "탈퇴", "나갈", "중단", "쉬고"],
+    },
+    {
+      tag: "recruit_replacement",
+      label: "후임·대체 인원 모집",
+      keywords: ["후임", "넘길 사람", "인수인계", "뽑", "모집"],
+    },
+    {
+      tag: "ask_help",
+      label: "선배·외부에 도움 요청",
+      keywords: ["선배", "OB", "물어", "도움", "경험자"],
     },
   ],
 };
@@ -238,9 +270,22 @@ export const ContextMetaSchema = z
 export type ContextMeta = z.infer<typeof ContextMetaSchema>;
 
 /** v2 2.2 내부 상황 구조. 학생이 말한 사실만 채우고 미확인은 비워 둔다. */
+/**
+ * 학생의 전공. 학과 개편이 잦아 enum으로 고정하지 않고 문자열로 받는다.
+ * `collegeId`는 `SKKU_COLLEGES`의 id, `department`는 표시용 학과명이다.
+ * 아직 학과를 정하지 않은 1학년도 있으므로 `department`는 선택이다.
+ */
+export const MajorSchema = z.object({
+  collegeId: z.string().min(1).max(40),
+  department: z.string().min(1).max(60).optional(),
+});
+export type Major = z.infer<typeof MajorSchema>;
+
 export const SituationSchema = z.object({
   category: CategorySchema,
   problemType: z.string().optional(),
+  /** A 추가(전공 수집). 선택 입력이라 없는 세션도 정상이다. */
+  major: MajorSchema.optional(),
   situation: z.string().default(""),
   goal: z.string().default(""),
   deadline: DeadlineSchema.default({}),

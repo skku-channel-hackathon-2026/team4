@@ -23,12 +23,38 @@
       src="/src/main.tsx"
     ></script>
     <script>
-      var appearance = ChannelIOWam.getWamData('appearance')
-      if (appearance === 'dark') {
-        document.body.style.backgroundColor = '#464748'
-      } else {
-        document.body.style.backgroundColor = '#FFFFFF'
-      }
+      // 테마를 한 곳에서만 정한다.
+      //
+      // WamThemeProvider는 호스트가 준 `appearance`로 Bezier 테마를 고르는데,
+      // 스킨이 OS의 prefers-color-scheme만 보면 둘이 어긋나 배경과 카드 색이
+      // 따로 논다(데스크는 다크인데 OS는 라이트인 경우 등). 그래서 여기서
+      // 호스트 값을 먼저, 없으면 OS 값을 html의 data-appearance에 적어 두고
+      // 색은 전부 index.css의 토큰이 맡는다.
+      //
+      // 호스트가 ChannelIOWam을 아직 심지 않았을 수 있어(로컬 dev, 주입 지연)
+      // 한 겹 감싼다. 실패하면 라이트로 둔다.
+      ;(function () {
+        var root = document.documentElement
+        var apply = function (dark) {
+          root.dataset.appearance = dark ? 'dark' : 'light'
+        }
+        try {
+          var wam = window.ChannelIOWam
+          var appearance = wam ? wam.getWamData('appearance') : null
+          if (appearance) {
+            apply(appearance === 'dark')
+            return
+          }
+          // 호스트가 말해 주지 않을 때만 OS를 따르고, 바뀌면 같이 따라간다.
+          var query = window.matchMedia('(prefers-color-scheme: dark)')
+          apply(query.matches)
+          query.addEventListener('change', function (event) {
+            apply(event.matches)
+          })
+        } catch (error) {
+          apply(false)
+        }
+      })()
     </script>
   </body>
 </html>

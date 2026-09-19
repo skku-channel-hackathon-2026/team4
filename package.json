@@ -15,6 +15,7 @@
     "format:check": "prettier --check . --ignore-path .gitignore --ignore-path .prettierignore",
     "dev:server": "pnpm --filter @tutorial/shared build && pnpm --filter @tutorial/server dev",
     "dev:wam": "pnpm --filter @tutorial/shared build && pnpm --filter @tutorial/wam dev",
+    "dev:wam:server": "pnpm --filter @tutorial/shared build && VITE_DEV_BRIDGE=server pnpm --filter @tutorial/wam dev",
     "start": "pnpm --filter @tutorial/server start",
     "build:vercel": "pnpm build && node scripts/build-vercel.mjs",
     "register": "pnpm --filter @tutorial/server register",

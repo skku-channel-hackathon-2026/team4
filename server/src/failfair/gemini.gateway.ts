@@ -147,16 +147,22 @@ const labels = {
   goal: "원하는 결과",
 };
 
+/** 허용하는 GEMINI_MODEL 형식. 생성자와 createModelGateway가 같은 규칙을 쓴다. */
+export const GEMINI_MODEL_PATTERN = /^gemini-[a-z0-9.-]+$/;
+
 export class GeminiGateway implements ModelGateway {
   constructor(
     private readonly apiKey: string,
     private readonly actionGateway: ModelGateway,
     private readonly model = "gemini-3.1-flash-lite",
-    private readonly request: typeof fetch = fetch,
+    // fetch를 그대로 저장하면 this.request(...) 호출 시 this가 인스턴스가 되어
+    // Cloudflare Workers에서 "Illegal invocation"이 난다(Node는 관대함). 반드시 감싸서 저장한다.
+    private readonly request: typeof fetch = (input, init) =>
+      fetch(input, init),
     // v0.3 확장 쓰기 토글. 기본 off이면 레거시 A만 반환한다.
     private readonly enableContextMeta = false,
   ) {
-    if (!apiKey.trim() || !/^gemini-[a-z0-9.-]+$/.test(model))
+    if (!apiKey.trim() || !GEMINI_MODEL_PATTERN.test(model))
       throw new Error("Invalid Gemini configuration");
   }
   async analyze(input: AnalyzeInput): Promise<AnalyzeOutput> {
@@ -262,6 +268,12 @@ evidence는 {path,messageIndex,quote}만 쓴다. messageIndex는 student 메시�
           throw new Error("Missing fields");
         previousOutput = raw;
         const result = Output.parse(raw);
+        // 전공은 학생이 첫 화면에서 고른 값이라 모델 응답 스키마에 없다. 여기서
+        // 이어 붙이지 않으면 `analyze`가 전공 없는 상황을 돌려주고, 호출부가 그걸
+        // 그대로 저장해 확인 이후의 답장 한 번에 전공이 조용히 사라진다.
+        // (값이 그대로라 아래 근거 검사도 통과한다.)
+        if (input.situation.major)
+          result.situation.major = { ...input.situation.major };
         for (const e of result.evidence)
           if (e.path.startsWith("situation.")) e.path = e.path.slice(10);
         // 라벨을 정식 한국어 형태로 정규화하고 중복을 제거한다(영문 필드키 방지).

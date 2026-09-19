@@ -13,26 +13,142 @@ body {
   overflow: hidden;
 
   -webkit-tap-highlight-color: transparent;
+
+  background: var(--ff-canvas);
 }
 
 :root {
   font-family: Inter, sans-serif;
 }
 
-/* 헤더 아래 본문. 최대 높이를 넘으면 안에서 스크롤한다. */
+/* ===========================================================================
+   웜 뉴트럴 스킨
+   ---------------------------------------------------------------------------
+   따뜻한 회색 캔버스 위에 크림 카드를 얹고, 코랄 하나만 강조색으로 쓴다.
+   강조색이 하나뿐이라 "지금 누를 것"이 항상 분명하고, 나머지는 명도 차이로만
+   구분한다. 어두운 면(차콜)은 지금 말하는 주체나 선택된 상태에만 쓴다.
+
+   Bezier 컴포넌트는 내부 스타일을 직접 고칠 수 없으므로, 디자인 시스템이 읽는
+   CSS 토큰(--color-*)을 여기서 다시 정의해 색만 갈아끼운다. 컴포넌트의 구조·
+   간격·상태 처리는 그대로 두므로 SDK 업데이트에도 비교적 안전하다.
+   =========================================================================== */
+
+:root {
+  --ff-canvas: #d7d1cb;
+  --ff-paper: #faf7f2;
+  --ff-paper-2: #f1ece4;
+  --ff-line: #e4ddd3;
+
+  --ff-charcoal: #2b2724;
+  --ff-charcoal-2: #3a3431;
+
+  --ff-accent: #c24e1c;
+  --ff-accent-strong: #8b340e;
+  --ff-accent-soft: #fbe2d6;
+
+  --ff-text: #2b2724;
+  --ff-text-soft: #8a817a;
+  --ff-text-on-dark: #f3efe9;
+
+  --ff-radius: 20px;
+  --ff-radius-lg: 28px;
+  --ff-shadow:
+    0 1px 2px rgba(43, 39, 36, 0.04), 0 10px 28px rgba(43, 39, 36, 0.07);
+
+  /* Bezier 토큰 재정의. 변수라서 !important 없이는 테마 클래스에 밀릴 수 있다. */
+  --color-fill-action: var(--ff-accent) !important;
+  --color-fill-action-hovered: var(--ff-accent-strong) !important;
+  --color-fill-action-light: var(--ff-accent-soft) !important;
+  --color-fill-action-lighter: var(--ff-paper-2) !important;
+  --color-text-action: var(--ff-accent-strong) !important;
+  --color-text-action-hovered: var(--ff-accent) !important;
+
+  --color-surface: var(--ff-paper) !important;
+  --color-surface-high: var(--ff-paper) !important;
+  --color-surface-higher: var(--ff-paper-2) !important;
+  --color-surface-higher-hovered: var(--ff-accent-soft) !important;
+  --color-surface-highest: var(--ff-paper-2) !important;
+
+  --color-border-neutral: var(--ff-line) !important;
+  --color-text-neutral: var(--ff-text) !important;
+  --color-text-neutral-light: var(--ff-text-soft) !important;
+  --color-text-neutral-lighter: var(--ff-text-soft) !important;
+  --color-text-critical: #c8442a !important;
+  --color-text-warning: #b6791d !important;
+}
+
+/* 다크는 index.html이 적어 준 data-appearance 하나만 본다. 호스트(채널톡 데스크)가
+   말해 준 테마가 먼저이고, 말해 주지 않을 때만 그 스크립트가 OS 설정을 옮겨 적는다.
+   여기서 prefers-color-scheme을 따로 보면 Bezier 테마와 어긋날 수 있다. */
+:root[data-appearance='dark'] {
+  --ff-canvas: #1d1a18;
+  --ff-paper: #262220;
+  --ff-paper-2: #302b28;
+  --ff-line: #3e3733;
+
+  --ff-charcoal: #15120f;
+  --ff-charcoal-2: #221e1b;
+
+  --ff-accent-soft: #4a2a1b;
+
+  --ff-text: #f0ebe4;
+  --ff-text-soft: #a09790;
+  --ff-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+/* 큰 제목. 레퍼런스처럼 산세리프를 크게, 자간을 좁혀서 쓴다. */
+.ff-display {
+  letter-spacing: -0.02em;
+  line-height: 1.28;
+  color: var(--ff-text);
+}
+
+/* 헤더 아래 본문. 크림 패널 위에 올리고, 넘치면 안에서 스크롤한다. */
 .ff-scroll {
-  max-height: 640px;
+  min-height: 320px;
+  max-height: 600px;
   overflow-y: auto;
-  padding: 0 20px 20px;
+  margin: 0 12px 12px;
+  padding: 16px;
+  border-radius: var(--ff-radius-lg);
+  border: none;
+  background: var(--ff-paper);
+  box-shadow: var(--ff-shadow);
   box-sizing: border-box;
 }
 
 .ff-box {
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border-neutral);
-  background: var(--color-surface-higher);
+  padding: 16px;
+  border-radius: var(--ff-radius);
+  border: 1px solid var(--ff-line);
+  background: var(--ff-paper-2);
 }
+
+/* 지금 눌러야 할 것이 들어 있는 상자. 강조색은 왼쪽 띠로만 쓴다. */
+.ff-box.ff-accent {
+  border-color: transparent;
+  background: var(--ff-accent-soft);
+}
+
+/* 주의해서 읽어야 하는 상자 (가상 사례, 사례 없음). */
+.ff-box.ff-warn {
+  border-color: transparent;
+  background: var(--ff-paper);
+  border-left: 3px solid var(--ff-accent);
+  border-radius: 8px var(--ff-radius) var(--ff-radius) 8px;
+}
+
+.ff-critical {
+  color: #c8442a;
+}
+
+/* 둥근 알약 모양이 이 스킨의 기본. Bezier 버튼까지 함께 깎는다. */
+.ff-scroll button,
+.ff-steps button {
+  border-radius: 999px !important;
+}
+
+/* ------------------------------------------------------------------ 큰 카드 */
 
 .ff-big {
   display: flex;
@@ -40,18 +156,150 @@ body {
   gap: 4px;
   width: 100%;
   text-align: left;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--color-border-neutral);
-  background: var(--color-surface-higher);
+  position: relative;
+  padding: 18px 58px 18px 20px;
+  border-radius: var(--ff-radius);
+  border: 1px solid var(--ff-line);
+  background: var(--ff-paper-2);
   cursor: pointer;
   font: inherit;
-  color: inherit;
+  color: var(--ff-text);
+  transition:
+    transform 140ms ease-out,
+    box-shadow 140ms ease-out,
+    background-color 140ms ease-out;
+}
+
+/* 오른쪽 원형 화살표. 누를 수 있는 카드라는 걸 한눈에 보이게 한다. */
+.ff-big::after {
+  content: '\2192';
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ff-accent-soft);
+  color: var(--ff-accent-strong);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/*
+ * 1순위 카드만 어두운 면으로 올린다. 서로 대등한 선택지(카테고리 3개)에는
+ * 붙이지 않는다. 아무 데나 붙이면 우선순위가 있는 것처럼 읽힌다.
+ */
+.ff-big-primary {
+  background: var(--ff-charcoal);
+  border-color: transparent;
+  color: var(--ff-text-on-dark);
+}
+
+.ff-big-primary span {
+  color: inherit !important;
+}
+
+.ff-big-primary::after {
+  background: var(--ff-accent);
+  color: #fff;
 }
 
 .ff-big:hover {
-  background: var(--color-surface-higher-hovered);
+  transform: translateY(-2px);
+  box-shadow: var(--ff-shadow);
 }
+
+.ff-big-primary:hover {
+  background: var(--ff-charcoal-2);
+}
+
+.ff-big:focus-visible {
+  outline: 2px solid var(--ff-accent);
+  outline-offset: 2px;
+}
+
+.ff-big:disabled {
+  cursor: default;
+  filter: grayscale(0.4);
+  transform: none;
+}
+
+/* ------------------------------------------------------------------ 진행 표시 */
+
+.ff-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px 12px;
+}
+
+.ff-steps-bar {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.ff-step {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--ff-line);
+  transition: background-color 180ms ease-out;
+}
+
+.ff-step-on {
+  background: var(--ff-accent);
+}
+
+/* ------------------------------------------------------------------ 오류 안내 */
+
+.ff-error {
+  margin-bottom: 14px;
+}
+
+/* ------------------------------------------------------------- 전공 선택 */
+
+.ff-major {
+  background: var(--ff-paper);
+  border-style: dashed;
+  border-radius: var(--ff-radius);
+}
+
+/* ------------------------------------------------------- 대화 중 수집 현황 */
+
+.ff-collected {
+  padding: 12px 14px;
+  background: var(--ff-paper);
+}
+
+.ff-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ff-slot {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px dashed var(--ff-line);
+  color: var(--ff-text-soft);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ff-slot-on {
+  border-style: solid;
+  border-color: transparent;
+  background: var(--ff-accent-soft);
+  color: var(--ff-text);
+}
+
+/* ---------------------------------------------------------------------- 대화 */
 
 .ff-log {
   display: flex;
@@ -60,19 +308,39 @@ body {
   padding: 4px 0 12px;
 }
 
-.ff-bubble {
-  align-self: flex-start;
-  max-width: 88%;
-  padding: 10px 14px;
-  border-radius: 14px 14px 14px 4px;
-  background: var(--color-surface-higher);
-  border: 1px solid var(--color-border-neutral);
+.ff-bubble-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 100%;
 }
 
+.ff-bubble-row-me {
+  align-items: flex-end;
+}
+
+.ff-bubble {
+  max-width: 88%;
+  padding: 11px 15px;
+  border-radius: 18px 18px 18px 6px;
+  background: var(--ff-paper-2);
+  border: 1px solid var(--ff-line);
+}
+
+/* 내 말풍선만 어두운 면. 레퍼런스의 다크 패널과 같은 역할이다. */
 .ff-bubble-me {
-  align-self: flex-end;
-  border-radius: 14px 14px 4px 14px;
-  background: var(--color-surface-highest);
+  border-radius: 18px 18px 6px 18px;
+  background: var(--ff-charcoal);
+  border-color: transparent;
+}
+
+.ff-bubble-me .ff-bubble-text {
+  color: var(--ff-text-on-dark) !important;
+}
+
+.ff-bubble-failed {
+  border: 1px solid #c8442a;
 }
 
 .ff-bubble-text {
@@ -82,23 +350,77 @@ body {
   font-family: inherit;
 }
 
+/* 답변 준비 중 표시. 점 세 개가 차례로 밝아진다. */
+.ff-bubble-typing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 14px;
+}
+
+.ff-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ff-accent);
+  animation: ff-blink 1.2s infinite ease-in-out;
+}
+
+.ff-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.ff-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes ff-blink {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-dot {
+    animation: none;
+    opacity: 0.5;
+  }
+
+  .ff-step,
+  .ff-big {
+    transition: none;
+  }
+
+  .ff-big:hover {
+    transform: none;
+  }
+}
+
 .ff-composer {
   display: flex;
   gap: 8px;
   align-items: flex-end;
-  padding-top: 8px;
-  border-top: 1px solid var(--color-border-neutral);
+  padding-top: 10px;
+  border-top: 1px solid var(--ff-line);
 }
 
 .ff-composer > :first-child {
   flex: 1;
 }
 
+/* ------------------------------------------------------------------ 사례 상세 */
+
 .ff-pre {
   margin: 0;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--color-surface-highest);
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--ff-paper);
+  border: 1px solid var(--ff-line);
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
@@ -111,7 +433,40 @@ body {
   align-items: start;
 }
 
-ul.ff-list {
+ul.ff-list,
+ol.ff-list {
   margin: 0;
   padding-left: 18px;
+}
+
+ul.ff-list > li,
+ol.ff-list > li {
+  margin-bottom: 2px;
+}
+
+/* --------------------------------------------------------- 좁은 폭 (모바일 WAM) */
+
+@media (max-width: 420px) {
+  .ff-scroll {
+    margin: 0 8px 8px;
+    padding: 14px;
+  }
+
+  .ff-steps {
+    padding: 0 16px 10px;
+  }
+
+  .ff-composer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ff-bubble {
+    max-width: 94%;
+  }
+
+  .ff-grid {
+    grid-template-columns: 1fr;
+    gap: 2px 0;
+  }
 }
