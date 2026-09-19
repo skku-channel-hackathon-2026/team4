@@ -31,7 +31,37 @@ function call<T>(
       )
     )
   }
-  return wam.callFunction<T>({ appId, name, params })
+  return wam.callFunction<unknown>({ appId, name, params }).then(unwrap<T>)
+}
+
+interface FunctionEnvelope {
+  result?: unknown
+  error?: { type?: string; message?: string; data?: unknown }
+}
+
+/**
+ * 채널톡 호스트는 App Function 응답을 \`{ result }\` 또는 \`{ error }\` 봉투로 돌려준다.
+ * 개발용 bridge는 result만 돌려주므로 두 모양을 모두 받는다. 봉투를 안 벗기면
+ * start 응답의 assistantMessage·sessionId가 undefined가 되어 첫 말풍선이 비고 다음 호출이 실패한다.
+ */
+export function unwrap<T>(response: unknown): T {
+  if (response && typeof response === 'object') {
+    const envelope = response as FunctionEnvelope
+    const keys = Object.keys(envelope)
+    const looksLikeEnvelope =
+      keys.length > 0 &&
+      keys.every((key) => key === 'result' || key === 'error')
+    if (looksLikeEnvelope) {
+      if (envelope.error) {
+        throw Object.assign(
+          new Error(envelope.error.message ?? '요청이 거부됐어요.'),
+          { type: envelope.error.type, data: envelope.error.data }
+        )
+      }
+      return envelope.result as T
+    }
+  }
+  return response as T
 }
 
 export function newRequestId(): string {
