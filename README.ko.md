@@ -1,4 +1,7 @@
-> **해커톤 참가팀 안내:** 현재 서버는 Cloudflare Workers, DB는 D1이며 팀 레포 main CI 성공 후 자동 배포됩니다. 아래 내용은 원본 튜토리얼의 Node 서버 참고 문서입니다. 실제 팀 개발·초대·배포·마이그레이션 절차는 [현재 README](README.md)와 [해커톤 가이드](HACKATHON.ko.md)를 따르세요.
+> **해커톤 참가팀 안내:** 현재 서버는 Vercel Hobby, DB는 D1이며 팀 레포 main CI 성공 후 자동 배포됩니다. 아래 내용은 원본 튜토리얼의 Node 서버 참고 문서입니다. 실제 팀 개발·초대·배포·마이그레이션 절차는 [현재 README](README.md)와 [해커톤 가이드](HACKATHON.ko.md)를 따르세요.
+
+> 배포 안내 (2026-09-19): 서버는 Vercel Hobby, DB는 기존 팀 전용 Cloudflare D1을 사용합니다. PR을 main에 머지하고 CI가 통과하면 SQL 마이그레이션 후 자동 배포됩니다. Vercel 초대나 수동 배포는 필요 없습니다. 로컬 DB 개발은 기존 Wrangler 명령을 사용합니다.
+> 운영 DB 연결은 팀별 키로 분리되며 `prepare/bind/run/first/all`을 지원합니다. HTTP 연결에서는 `.batch()`를 지원하지 않습니다.
 
 # Channel App 튜토리얼 — TypeScript
 
@@ -6,7 +9,7 @@
 
 > **성균관대 해커톤 팀 개발 안내**: [시작하기·배포·DB 마이그레이션](HACKATHON.ko.md) · [Desk 검증 기록](docs/desk-qa.md)
 > GitHub Write, 앱 개발 권한, 전용 채널 초대를 수락한 뒤 위 가이드부터 확인하세요.
-> `main` push는 코드 배포 대상이며, 원격 DB 마이그레이션과 익스텐션 등록 갱신은 운영진에게 별도로 요청합니다.
+> `main` push는 코드 배포 대상이며, 원격 DB 마이그레이션은 main CI 성공 후 자동 적용되며, 익스텐션 등록 갱신은 운영진에게 요청합니다.
 
 [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md)
 
@@ -153,4 +156,4 @@ wam/
 
 ## 성균관대 해커톤
 
-팀별 Cloudflare Workers·D1 배포와 개발 안내는 [해커톤 가이드](HACKATHON.ko.md)를 참고하세요.
+팀별 Vercel·D1 배포와 개발 안내는 [해커톤 가이드](HACKATHON.ko.md)를 참고하세요.

@@ -1,11 +1,14 @@
 # SKKU 2026 team4 — Channel App
 
+> 배포 안내 (2026-09-19): 서버는 Vercel Hobby, DB는 기존 팀 전용 Cloudflare D1을 사용합니다. PR을 main에 머지하고 CI가 통과하면 SQL 마이그레이션 후 자동 배포됩니다. Vercel 초대나 수동 배포는 필요 없습니다. 로컬 DB 개발은 기존 Wrangler 명령을 사용합니다.
+> 운영 DB 연결은 팀별 키로 분리되며 `prepare/bind/run/first/all`을 지원합니다. HTTP 연결에서는 `.batch()`를 지원하지 않습니다.
+
 **SKKU 2026 team4** · [이 팀의 리소스와 준비 상태](TEAM.md)
 
 > **성균관대 해커톤 팀 개발 안내**: [시작하기·배포·DB 마이그레이션](HACKATHON.ko.md) · [Desk 검증 기록](docs/desk-qa.md)
 > 팀 레포 Admin·채널톡 앱 owner 초대를 수락하고, 공통 성균관대 해커톤 채널에 참여하세요.
 > 앱 초대 확인·수락: [개발자 앱 목록](https://channel.works/-/developers/apps) — 초대 이메일과 같은 계정으로 로그인합니다.
-> 팀 레포는 **PR 머지 → main CI 성공 → 원격 D1 마이그레이션 → Cloudflare Workers 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
+> 팀 레포는 **PR 머지 → main CI 성공 → 원격 D1 마이그레이션 → Vercel 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
 > DB 마이그레이션은 자동 적용됩니다. 앱 비밀 키 변경·익스텐션 등록 갱신은 운영진에게 요청합니다. Vercel 또는 Cloudflare 계정 초대는 필요하지 않습니다.
 
 [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md)
@@ -101,7 +104,7 @@ D1을 사용하는 기능은 Wrangler로 실행하세요. Node 서버만 실행�
 
 팀 레포에서 작업 브랜치의 PR을 `main`에 머지하면 main CI 성공 후 미적용 SQL을 원격 D1에 적용하고 앱을 배포합니다. SQL 적용 실패 시 앱 배포도 중단됩니다.
 PR 검사만 성공하거나 main CI가 실패한 경우에는 배포되지 않습니다.
-서버는 Cloudflare Workers Free, DB는 팀별 D1입니다. 별도 Vercel 배포는 사용하지 않습니다.
+서버는 Vercel Hobby, DB는 기존 팀 전용 D1입니다. 운영 배포 시스템이 자동으로 연결합니다.
 CI 성공과 배포 완료는 별개이며, 배포 로그·커밋 SHA는 운영진이 확인할 수 있습니다.
 `/api/health`는 서버 상태, `/api/ready`는 실제 D1 연결(`SELECT 1`)을 확인합니다.
 이 상태 검사만으로 기능의 데이터 저장·조회까지 검증되는 것은 아닙니다.

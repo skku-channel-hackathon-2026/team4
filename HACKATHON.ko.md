@@ -1,7 +1,10 @@
 # 성균관대 해커톤 개발 가이드
 
+> 배포 안내 (2026-09-19): 서버는 Vercel Hobby, DB는 기존 팀 전용 Cloudflare D1을 사용합니다. PR을 main에 머지하고 CI가 통과하면 SQL 마이그레이션 후 자동 배포됩니다. Vercel 초대나 수동 배포는 필요 없습니다. 로컬 DB 개발은 기존 Wrangler 명령을 사용합니다.
+> 운영 DB 연결은 팀별 키로 분리되며 `prepare/bind/run/first/all`을 지원합니다. HTTP 연결에서는 `.batch()`를 지원하지 않습니다.
+
 공식 `channel-io/app-tutorial-ts`와 Channel App SDK 0.17.2를 기반으로 합니다.
-서버는 Cloudflare Workers Free, DB는 팀별 Cloudflare D1(SQLite), 화면은 React WAM입니다.
+서버는 Vercel Hobby, DB는 팀별 Cloudflare D1(SQLite), 화면은 React WAM입니다.
 Node.js 24와 pnpm 11.24.0을 사용합니다. `pnpm-lock.yaml`을 함께 커밋하세요.
 
 ## 초대 수락 후 확인할 것
@@ -162,7 +165,7 @@ corepack pnpm test:cloudflare
 ```
 
 등록 갱신은 운영진이 해당 팀 자격 증명을 안전하게 설정한 환경에서 `corepack pnpm register`로
-실행합니다. Workers에서는 자동 등록하지 않습니다. 앱 비밀 키는 WAM 코드, Git, 이슈, 채팅,
+실행합니다. 운영 배포에서는 자동 등록하지 않습니다. 앱 비밀 키는 WAM 코드, Git, 이슈, 채팅,
 README에 넣지 마세요. `.dev.vars`와 `server/.env`도 커밋하지 않습니다.
 
 ## Desk에서 앱 확인하기
@@ -182,7 +185,7 @@ README에 넣지 마세요. `.dev.vars`와 `server/.env`도 커밋하지 않습�
 운영진이 Worker·계정·DB 매핑을 관리합니다. 이 매핑을 바꿔 다른 팀 DB를 연결할 수 없습니다.
 메모리·로컬 파일은 영속 저장소가 아니므로 데이터를 D1에 저장하세요.
 
-Workers Free, D1, GitHub Actions에는 요청·CPU·저장량·빌드 사용량 한도가 있습니다.
+Vercel Hobby, D1, GitHub Actions에는 요청·CPU·저장량·빌드 사용량 한도가 있습니다.
 유료 업그레이드는 하지 않으므로 한도에 도달하면 운영진에게 알려주세요.
 WebSocket, Nest microservices, class-validator, class-transformer는 현재 Workers 번들에서
 제외되어 있습니다. 입력 검증에는 기존 Zod를 사용합니다.
