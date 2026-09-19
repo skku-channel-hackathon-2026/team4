@@ -86,7 +86,7 @@ export const DEMO_CASES: Case[] = [
       shortTerm: "교수님이 평가 방식을 조정해 주겠다고 답했다",
       followUp: "발표 후 개별 기여도 제출 요청을 받았다",
       unresolved:
-        "교수님께 팀 문제를 알렸다는 게 단톡에 퍼져 잠수 팀원과 친한 부원들과 껄끄러워졌다",
+        "교수님께 팀 문제를 알렸다는 게 단톡에 퍼져 잠수 팀원과 친한 다른 팀원들과 껄끄러워졌다",
     },
     receipt: {
       firstAction: "연락 시도 시각을 전부 메모",
@@ -213,7 +213,7 @@ export const DEMO_CASES: Case[] = [
         "가능한 시간대: ___ / ___",
         "미리 준비해 갈 것: 채점 답안, 틀린 문제 목록",
       ].join("\n"),
-      usageNote: "",
+      usageNote: "채점 답안과 틀린 문제 목록을 준비한 뒤 면담 전에 보냄",
     },
   },
   {

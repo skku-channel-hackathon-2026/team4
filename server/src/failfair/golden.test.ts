@@ -35,6 +35,13 @@ test("사례 id가 중복되지 않는다", () => {
   assert.equal(new Set(ids).size, ids.length);
 });
 
+test("데모 사례는 승인 상태와 가상 출처를 유지한다", () => {
+  for (const item of DEMO_CASES) {
+    assert.equal(item.status, "approved", `${item.id}: 승인 상태가 아닙니다`);
+    assert.equal(item.sourceType, "demo", `${item.id}: 가상 출처가 아닙니다`);
+  }
+});
+
 test("사례가 쓰는 행동 태그는 모두 ACTION_TAGS에 있다", () => {
   for (const item of DEMO_CASES) {
     const known = new Set(ACTION_TAGS[item.category].map((entry) => entry.tag));
@@ -59,6 +66,16 @@ test("망한 선배 사례는 대가와 미해결을 함께 남긴다", () => {
     assert.ok(
       admitsLimits,
       `${item.id}: unresolved가 비어 있는데 status도 resolved입니다. 남은 문제가 정말 없는지 확인하세요`,
+    );
+  }
+});
+
+test("복구 도구에는 사용할 시점이나 조건이 있다", () => {
+  for (const item of DEMO_CASES) {
+    if (!item.tool) continue;
+    assert.ok(
+      item.tool.usageNote.trim().length > 0,
+      `${item.id}: tool.usageNote가 비어 있습니다`,
     );
   }
 });
