@@ -49,8 +49,8 @@ function MajorPicker({ major, onChange }: MajorPickerProps) {
               color="text-neutral-lighter"
             >
               {major
-                ? '수업·학사 규정이 다른 사례는 그 차이를 함께 보여 드려요.'
-                : '고르면 학과 사정이 비슷한 선배 사례를 먼저 찾아요.'}
+                ? '상황 확인과 사례 비교 화면에 함께 표시돼요.'
+                : '골라 두면 상황 요약에 함께 남아요. 건너뛰어도 괜찮아요.'}
             </Text>
           </VStack>
           <Button

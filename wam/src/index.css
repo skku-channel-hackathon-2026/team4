@@ -77,22 +77,23 @@ body {
   --color-text-warning: #b6791d !important;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ff-canvas: #1d1a18;
-    --ff-paper: #262220;
-    --ff-paper-2: #302b28;
-    --ff-line: #3e3733;
+/* 다크는 index.html이 적어 준 data-appearance 하나만 본다. 호스트(채널톡 데스크)가
+   말해 준 테마가 먼저이고, 말해 주지 않을 때만 그 스크립트가 OS 설정을 옮겨 적는다.
+   여기서 prefers-color-scheme을 따로 보면 Bezier 테마와 어긋날 수 있다. */
+:root[data-appearance='dark'] {
+  --ff-canvas: #1d1a18;
+  --ff-paper: #262220;
+  --ff-paper-2: #302b28;
+  --ff-line: #3e3733;
 
-    --ff-charcoal: #15120f;
-    --ff-charcoal-2: #221e1b;
+  --ff-charcoal: #15120f;
+  --ff-charcoal-2: #221e1b;
 
-    --ff-accent-soft: #4a2a1b;
+  --ff-accent-soft: #4a2a1b;
 
-    --ff-text: #f0ebe4;
-    --ff-text-soft: #a09790;
-    --ff-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
-  }
+  --ff-text: #f0ebe4;
+  --ff-text-soft: #a09790;
+  --ff-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 /* 큰 제목. 레퍼런스처럼 산세리프를 크게, 자간을 좁혀서 쓴다. */

@@ -5,8 +5,8 @@ import { FAILFAIR_ERRORS } from '@tutorial/shared'
  *
  * 호스트(채널톡)가 `callFunction` 거절을 어떤 모양으로 넘겨줄지는 SDK 타입에
  * 정의돼 있지 않다. 그래서 코드를 한 곳에서만 찾지 않고, 흔한 위치(`type`,
- * `data.type`, `error.type`, `cause`)와 메시지 문자열까지 훑어서 판별한다.
- * 어느 쪽으로 오더라도 v2 §10의 다섯 코드는 같은 안내로 수렴한다.
+ * `data.type`, `error.type`)와 `Error`의 `message`·`name`·`cause`까지 훑어서
+ * 판별한다. 어느 쪽으로 오더라도 v2 §10의 다섯 코드는 같은 안내로 수렴한다.
  */
 
 export type FailfairErrorCode =
@@ -65,6 +65,18 @@ function findCode(value: unknown, depth = 0): FailfairErrorCode | null {
     return CODES.find((code) => value.includes(code)) ?? null
   }
   if (typeof value !== 'object') return null
+
+  // `Error`의 message·name·cause는 열거 가능한 속성이 아니라 아래 Object.values
+  // 순회에 잡히지 않는다. 호스트가 평범한 Error로 거절하면 코드를 통째로
+  // 놓치므로 여기서 따로 본다.
+  if (value instanceof Error) {
+    const own =
+      findCode(value.message, depth + 1) ??
+      findCode(value.name, depth + 1) ??
+      // `cause`는 tsconfig lib(ES2020)에 없지만 런타임에는 있을 수 있다.
+      findCode((value as { cause?: unknown }).cause, depth + 1)
+    if (own) return own
+  }
 
   for (const nested of Object.values(value as Record<string, unknown>)) {
     const found = findCode(nested, depth + 1)

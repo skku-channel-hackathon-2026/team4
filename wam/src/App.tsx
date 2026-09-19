@@ -94,20 +94,42 @@ function App() {
   /** 첫 화면에서 고른 전공. 세션 시작부터 상황에 실어 보낸다. */
   const [major, setMajor] = useState<Major | undefined>(undefined)
 
-  // 화면이 바뀌면 본문 스크롤을 위로 돌린다. 앞 화면의 위치가 남아 있으면
-  // 새 화면이 중간부터 보여서 무엇을 보는지 알기 어렵다.
+  // 화면이 바뀌면 본문 스크롤을 처음 볼 자리로 돌린다. 앞 화면의 위치가 남아
+  // 있으면 새 화면이 중간부터 보여서 무엇을 보는지 알기 어렵다.
   const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * 항상 최신 세션을 들고 있는 ref.
+   *
+   * 호출 task는 `id`와 `revision`을 여기에서 읽는다. 클로저에 박아 두면
+   * STALE_SESSION으로 세션을 다시 받아 온 뒤에도 "다시 시도"가 옛 revision을
+   * 그대로 보내 같은 오류가 끝없이 반복된다 (v2 §10).
+   */
+  const sessionRef = useRef<SessionView | null>(null)
 
   // 마지막으로 실패한 호출. 오류 배너의 "다시 시도"가 그대로 다시 부른다.
   const lastTask = useRef<(() => Promise<void>) | null>(null)
   const lastFallback = useRef('')
+  const lastOnFail = useRef<(() => void) | undefined>(undefined)
 
   useEffect(() => {
     setSize({ width: WAM_WIDTH, height: WAM_MAX_HEIGHT })
   }, [setSize])
 
+  // 렌더가 끝난 뒤에 맞춘다. "다시 시도"는 사용자가 누르는 것이라 언제나
+  // 이 효과가 돈 다음에 실행된다.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 0 })
+    sessionRef.current = session
+  }, [session])
+
+  useEffect(() => {
+    const body = scrollRef.current
+    if (!body) return
+    // 대화는 마지막 말풍선과 입력창이 보이도록 아래로, 나머지 화면은 위로.
+    // 부모인 이 효과가 ChatPage의 효과보다 나중에 돌기 때문에, 여기서 무조건
+    // 위로 돌리면 대화로 돌아올 때마다 입력창이 화면 밖으로 밀렸다.
+    const chat = screen.kind === 'student' && screen.step === 'chat'
+    body.scrollTo({ top: chat ? body.scrollHeight : 0 })
   }, [screen])
 
   useEffect(() => {
@@ -127,6 +149,7 @@ function App() {
     ) => {
       lastTask.current = task
       lastFallback.current = fallback
+      lastOnFail.current = onFail
       setBusy(true)
       setError(null)
       try {
@@ -136,9 +159,12 @@ function App() {
         setError(resolved)
         onFail?.()
         // 버전이 밀린 경우에만 최신 상태로 되맞춘다 (v2 §10 STALE_SESSION).
-        if (resolved.code === 'STALE_SESSION' && session) {
+        const current = sessionRef.current
+        if (resolved.code === 'STALE_SESSION' && current) {
           try {
-            setSession(await api.getSession(session.id))
+            const fresh = await api.getSession(current.id)
+            sessionRef.current = fresh
+            setSession(fresh)
           } catch {
             // 조회도 실패하면 위 안내만 남긴다.
           }
@@ -147,13 +173,14 @@ function App() {
         setBusy(false)
       }
     },
-    [api, session]
+    [api]
   )
 
+  /** 실패한 호출을 그대로 한 번 더. task가 최신 revision을 다시 읽어 간다. */
   const retry = () => {
     const task = lastTask.current
     if (!task || busy) return
-    void run(task, lastFallback.current)
+    void run(task, lastFallback.current, lastOnFail.current)
   }
 
   // ---------------------------------------------------------------- 학생 흐름
@@ -196,9 +223,10 @@ function App() {
   const deliver = (text: string, at: number) =>
     void run(
       async () => {
-        if (!session) return
+        const live = sessionRef.current
+        if (!live) return
         setFailedSend(null)
-        const replied = await api.reply(session.id, session.revision, text)
+        const replied = await api.reply(live.id, live.revision, text)
         setSession((current) =>
           current
             ? {
@@ -243,11 +271,15 @@ function App() {
 
   /** 남은 질문을 한 번에 건너뛰고 상황 확인으로 넘어간다. */
   const skipRemaining = () => {
-    if (!session) return
+    if (!sessionRef.current) return
     void run(async () => {
-      let current = session
+      let current = sessionRef.current
+      if (!current) return
+      // 남은 질문 수만큼 답을 보내지만 대화에는 한 쌍만 남긴다. 중간 질문은
+      // 이미 건너뛴 것이라 그대로 쌓으면 같은 문구가 세 번 이어져 보인다.
+      const before = current.messages
+      const at = Date.now()
       for (let attempt = 0; attempt < MAX_SKIPS; attempt += 1) {
-        const at = Date.now() + attempt * 2
         const replied = await api.reply(current.id, current.revision, SKIP_TEXT)
         current = {
           ...current,
@@ -255,7 +287,7 @@ function App() {
           revision: replied.revision,
           situation: replied.situation,
           messages: [
-            ...current.messages,
+            ...before,
             { role: 'student', content: SKIP_TEXT, at },
             {
               role: 'assistant',
@@ -264,6 +296,7 @@ function App() {
             },
           ],
         }
+        sessionRef.current = current
         setSession(current)
         if (current.state !== 'COLLECTING') break
       }
@@ -274,15 +307,17 @@ function App() {
   }
 
   const confirmSituation = (situation: Situation) => {
-    if (!session) return
+    if (!sessionRef.current) return
     void run(async () => {
+      const live = sessionRef.current
+      if (!live) return
       const confirmed = await api.confirmSituation(
-        session.id,
-        session.revision,
+        live.id,
+        live.revision,
         situation
       )
       setSession({
-        ...session,
+        ...live,
         state: confirmed.state,
         revision: confirmed.revision,
         situation: confirmed.situation,
@@ -294,16 +329,20 @@ function App() {
   }
 
   const compare = (actions: ActionCandidate[]) => {
-    if (!session) return
+    const opened = sessionRef.current
+    if (!opened) return
     // 검색은 몇 초 걸린다. 결과 화면으로 먼저 옮겨 스켈레톤을 보여 준다.
     setComparingCount(actions.length)
     setNotice('')
-    setSession({ ...session, actions, results: [] })
+    sessionRef.current = { ...opened, actions, results: [] }
+    setSession(sessionRef.current)
     setScreen({ kind: 'student', step: 'compare' })
     void run(async () => {
-      const compared = await api.compare(session.id, session.revision, actions)
+      const current = sessionRef.current
+      if (!current) return
+      const compared = await api.compare(current.id, current.revision, actions)
       setSession({
-        ...session,
+        ...current,
         state: compared.state,
         revision: compared.revision,
         actions,
@@ -314,9 +353,11 @@ function App() {
   }
 
   const openCase = (caseId: string, resultId: string) => {
-    if (!session) return
+    if (!sessionRef.current) return
     void run(async () => {
-      const { case: item } = await api.getCase(session.id, caseId)
+      const live = sessionRef.current
+      if (!live) return
+      const { case: item } = await api.getCase(live.id, caseId)
       setCaseDetail(item)
       setActiveResultId(resultId)
       setScreen({ kind: 'student', step: 'case' })
@@ -337,6 +378,10 @@ function App() {
   }
 
   const restart = () => {
+    sessionRef.current = null
+    // 죽은 세션을 겨냥한 "다시 시도"가 남지 않도록 같이 비운다.
+    lastTask.current = null
+    lastOnFail.current = undefined
     setSession(null)
     setCaseDetail(null)
     setNotice('')

@@ -25,10 +25,17 @@ interface ChatPageProps {
   onReview: () => void
 }
 
-/** 마지막으로 내가 보낸 메시지의 위치. 실패 표시를 여기에만 붙인다. */
-function lastStudentIndex(messages: Message[]): number {
+/**
+ * 못 보낸 메시지가 놓인 자리. 내용까지 맞춰 본다.
+ *
+ * STALE_SESSION 뒤에는 대화 기록을 서버 것으로 다시 받아 오는데, 실패한
+ * 메시지는 그 안에 없다. 위치만 보고 붙이면 엉뚱한 말풍선에 "보내지 못했어요"가
+ * 달린다.
+ */
+function failedIndexOf(messages: Message[], text: string): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === 'student') return index
+    const message = messages[index]
+    if (message?.role === 'student' && message.content === text) return index
   }
   return -1
 }
@@ -47,8 +54,11 @@ function ChatPage({
 }: ChatPageProps) {
   const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement | null>(null)
-  const failedIndex = failedSend ? lastStudentIndex(messages) : -1
+  const failedIndex = failedSend ? failedIndexOf(messages, failedSend) : -1
 
+  // 새 말풍선이 생기면 본문 맨 아래로 내린다. 기준점을 대화 기록 안이 아니라
+  // 페이지 끝에 두어야 마지막 말풍선과 입력창이 함께 보인다. 기록 안에 두면
+  // 기록이 넘칠 만큼 길어지기 전까지는 아무 일도 하지 않는다.
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [messages.length, busy])
@@ -73,7 +83,6 @@ function ChatPage({
           />
         ))}
         {busy && <TypingBubble />}
-        <div ref={endRef} />
       </div>
 
       {state === 'COLLECTING' && situation.situation && (
@@ -156,6 +165,8 @@ function ChatPage({
         &ldquo;모르겠어요&rdquo;도 괜찮은 답이에요. 답하지 않은 항목은 결과에서
         미확인으로 표시되고, 사라지지 않아요.
       </Text>
+
+      <div ref={endRef} />
     </VStack>
   )
 }

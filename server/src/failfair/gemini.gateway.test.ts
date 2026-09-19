@@ -85,6 +85,22 @@ test("Gemini preserves context and emits one question without duplicating messag
   assert.equal(result.pendingField, "deadline");
   assert.deepEqual(before, copy);
 });
+test("Gemini keeps the major its response schema never carries", async () => {
+  const before = input();
+  before.situation.major = {
+    collegeId: "engineering",
+    department: "기계공학부",
+  };
+  const raw = output();
+  // 모델 응답에는 전공이 없다. 그대로 돌려주면 학생이 고른 값이 사라진다.
+  assert.equal("major" in raw.situation, false);
+
+  const result = await gateway(raw).analyze(before);
+  assert.deepEqual(result.situation.major, {
+    collegeId: "engineering",
+    department: "기계공학부",
+  });
+});
 test("invalid category, evidence, required fields and problem types fail closed", async () => {
   for (const mutate of [
     (o: any) => (o.situation.category = "club"),
