@@ -113,6 +113,9 @@ function App() {
    */
   const sessionRef = useRef<SessionView | null>(null)
 
+  /** 말풍선별 requestId. 같은 말풍선의 재전송은 같은 값을 쓴다. */
+  const requestIds = useRef(new Map<number, string>())
+
   // 마지막으로 실패한 호출. 오류 배너의 "다시 시도"가 그대로 다시 부른다.
   const lastTask = useRef<(() => Promise<void>) | null>(null)
   const lastFallback = useRef('')
@@ -243,7 +246,11 @@ function App() {
    * 저장된 응답을 되찾는다.
    */
   const deliver = (text: string, at: number) => {
-    const requestId = newRequestId()
+    // 말풍선(at)당 하나로 고정한다. `resend`로 다시 불려도 같은 값을 써야
+    // 서버가 이미 처리한 요청을 한 번 더 실행하지 않는다.
+    const existing = requestIds.current.get(at)
+    const requestId = existing ?? newRequestId()
+    if (!existing) requestIds.current.set(at, requestId)
     void run(
       async () => {
         const live = sessionRef.current
@@ -301,7 +308,9 @@ function App() {
     if (!sessionRef.current) return
     // 회차마다 고정된 requestId. 재시도해도 같은 값을 써서, 서버가 이미 처리한
     // 회차는 저장된 응답으로 되돌아오고 중복으로 한 번 더 건너뛰지 않는다.
-    const requestIds = Array.from({ length: MAX_SKIPS }, () => newRequestId())
+    const skipRequestIds = Array.from({ length: MAX_SKIPS }, () =>
+      newRequestId()
+    )
     void run(async () => {
       let current = sessionRef.current
       if (!current) return
@@ -314,7 +323,7 @@ function App() {
           current.id,
           current.revision,
           SKIP_TEXT,
-          requestIds[attempt]
+          skipRequestIds[attempt]
         )
         current = {
           ...current,
@@ -425,6 +434,7 @@ function App() {
     // 죽은 세션을 겨냥한 "다시 시도"가 남지 않도록 같이 비운다.
     lastTask.current = null
     lastOnFail.current = undefined
+    requestIds.current.clear()
     setSession(null)
     setCaseDetail(null)
     setNotice('')
