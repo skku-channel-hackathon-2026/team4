@@ -56,6 +56,7 @@ function SituationReviewPage({
       problemType: situation.problemType,
       // 전공은 이 화면에서 고치지 않지만, 새 객체를 만들기 때문에 넣지 않으면 사라진다.
       major: situation.major,
+      studentContext: situation.studentContext,
       situation: text.trim(),
       goal: goal.trim(),
       deadline: { raw: deadlineRaw.trim(), urgency },
@@ -132,6 +133,24 @@ function SituationReviewPage({
           onChange={(event) => setGoal(event.target.value)}
         />
       </Section>
+
+      {situation.studentContext?.items.some(
+        (item) => item.kind === 'preference'
+      ) && (
+        <Section title="유지하고 싶은 것">
+          {situation.studentContext.items
+            .filter((item) => item.kind === 'preference')
+            .map((item) => (
+              <Text
+                key={item.id}
+                as="p"
+                typo="14"
+              >
+                {item.topic}: {item.value}
+              </Text>
+            ))}
+        </Section>
+      )}
 
       <Section
         title="제약"

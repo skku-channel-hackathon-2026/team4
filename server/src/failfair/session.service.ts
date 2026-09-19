@@ -5,6 +5,8 @@ import {
 } from "@channel.io/app-sdk-server";
 import {
   FAILFAIR_ERRORS,
+  validateContextMeta,
+  pruneResolvedUnknowns,
   type ActionCandidate,
   type ActionResult,
   type Category,
@@ -239,6 +241,8 @@ export class SessionService {
     if (replay) return replay.response as T;
     if (session.revision !== expectedRevision) throw stale(session.revision);
     const response = await handler(session);
+    if (validateContextMeta(session.situation, session.messages).length)
+      throw new Error("Invalid situation metadata");
     const from = session.revision;
     session.revision += 1;
     session.updatedAt = now;
@@ -286,7 +290,8 @@ export function requireState(
 }
 
 export function normalizeSituation(situation: Situation): Situation {
-  return {
+  // 값이 있는 필드는 unknowns에서 제거한다(저장/읽기 왕복 시 오염 방지, 레거시 데이터 포함).
+  return pruneResolvedUnknowns({
     category: situation.category,
     problemType: situation.problemType,
     // A 추가(전공 수집). 여기서 빠뜨리면 확인 단계에서 전공이 조용히 사라진다.
@@ -302,5 +307,10 @@ export function normalizeSituation(situation: Situation): Situation {
     attemptedActions: situation.attemptedActions ?? [],
     consideredActions: situation.consideredActions ?? [],
     unknowns: situation.unknowns ?? [],
-  };
+    // 선택적 v0.3 확장은 있을 때만 그대로 보존한다(왕복 저장 시 손실 방지).
+    ...(situation.contextMeta ? { contextMeta: situation.contextMeta } : {}),
+    ...(situation.studentContext
+      ? { studentContext: situation.studentContext }
+      : {}),
+  });
 }

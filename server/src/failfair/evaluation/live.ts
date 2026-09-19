@@ -1,11 +1,14 @@
 import "dotenv/config";
+import { contextScenarios } from "./context-scenarios.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { GeminiGateway } from "../gemini.gateway.js";
 import { RuleBasedGateway } from "../model-gateway.js";
 import { runConversation, scenarios } from "./conversation.js";
 
 const chosen = process.argv[2];
-if (chosen && !scenarios.some((s) => s.id === chosen)) {
+const suite = chosen === "--context" ? contextScenarios : scenarios;
+const selectedId = chosen === "--context" ? undefined : chosen;
+if (selectedId && !suite.some((s) => s.id === selectedId)) {
   console.error(`시나리오: ${scenarios.map((s) => s.id).join(", ")}`);
   process.exitCode = 2;
 } else if (!process.env.GEMINI_API_KEY?.trim()) {
@@ -27,9 +30,12 @@ if (chosen && !scenarios.some((s) => s.id === chosen)) {
     new RuleBasedGateway(),
     model,
     observedFetch,
+    process.env.ENABLE_CONTEXT_META_WRITE === "true",
   );
   const results = [];
-  for (const scenario of scenarios.filter((s) => !chosen || s.id === chosen)) {
+  for (const scenario of suite.filter(
+    (s) => !selectedId || s.id === selectedId,
+  )) {
     const result = await runConversation(gateway, scenario);
     results.push(result);
     console.log(

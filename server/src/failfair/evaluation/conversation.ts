@@ -36,10 +36,18 @@ export const scenarios: Scenario[] = [
       {
         message:
           "21학점을 듣고 주 4일 알바해. 생활비 때문에 알바는 못 줄여. 과제를 못 내고 있어. 낙제만 피하고 싶어.",
-        check: (o) =>
-          /생활비/.test(JSON.stringify(o.situation))
+        check: (o) => {
+          // 모델이 "생활비" 원문을 "생계·경제적 이유" 등으로 바꿔 써도
+          // 제약을 보존했으면 통과한다. 키워드 기반의 누락 검사이며 의미·부정의 정확성을 보증하지 않는다.
+          const captured = [
+            o.situation.constraints.join(" "),
+            o.situation.situation,
+          ].join(" ");
+          return /생활비|생계|경제|비용|돈|월세|고정\s*지출/.test(captured) &&
+            /알바|아르바이트|근로/.test(captured)
             ? []
-            : ["생활비 제약 누락"],
+            : ["생활비·알바 제약 누락"];
+        },
       },
       {
         message:
@@ -82,6 +90,61 @@ export const scenarios: Scenario[] = [
           o.situation.category === "grades"
             ? []
             : ["입력 명령문이 카테고리를 변경함"],
+      },
+    ],
+  },
+  {
+    id: "unseen-duration-and-correction",
+    category: "team_project",
+    turns: [
+      {
+        message:
+          "발표까지 13일 남았는데 역할 분담이 안 됐어. 제출은 하고 싶어.",
+        check: (o) =>
+          o.situation.deadline.urgency === "later"
+            ? []
+            : ["13일은 later여야 함"],
+      },
+      {
+        message: "아 잘못 봤다. 48시간 남았어. 지금 정보로 정리해줘.",
+        check: (o) =>
+          o.situation.deadline.urgency === "week" ? [] : ["48시간 정정 누락"],
+      },
+    ],
+  },
+  {
+    id: "unseen-negation",
+    category: "grades",
+    turns: [
+      {
+        message:
+          "알바는 안 해. 생활비도 문제없고. 미적분의 기초를 몰라서 숙제를 못 풀겠어. 과제 마감은 2주 뒤야. 개념부터 이해하고 싶어.",
+        check: (o) => [
+          ...(o.situation.deadline.urgency !== "later"
+            ? ["2주 기한 오류"]
+            : []),
+          ...(/알바|아르바이트|생활비|생계/.test(
+            o.situation.constraints.join(" "),
+          )
+            ? ["부정한 경제 제약이 constraints에 포함됨: 수동 검토 필요"]
+            : []),
+        ],
+      },
+    ],
+  },
+  {
+    id: "unseen-informal-club",
+    category: "club",
+    turns: [
+      {
+        message:
+          "축제 부스 나 혼자 맡게 생김ㅠ 아직 암것도 안함. 사흘 뒤 오픈이래. 도망가고픈데 일단 같이 할 사람부터 구하고 싶음",
+        check: (o) => [
+          ...(o.situation.deadline.urgency !== "week"
+            ? ["사흘 해석 실패"]
+            : []),
+          ...(!o.situation.goal ? ["목표 누락"] : []),
+        ],
       },
     ],
   },

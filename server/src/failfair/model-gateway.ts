@@ -1,3 +1,4 @@
+import { explicitDurationUrgency } from "./urgency.js";
 import { GEMINI_MODEL_PATTERN, GeminiGateway } from "./gemini.gateway.js";
 import {
   ACTION_TAGS,
@@ -43,6 +44,20 @@ const MAX_QUESTIONS = 3;
 const SKIP_PATTERN = /모르겠|말하고 싶지 않|건너|스킵|패스|잘 몰라|글쎄/;
 
 export function detectUrgency(text: string): Urgency {
+  const explicit = explicitDurationUrgency(text);
+  if (explicit) return explicit;
+  // Conflicting, negated, and qualified durations need semantic interpretation.
+  const durations = [
+    ...text.matchAll(/(?<![\d.])\d+(?:\.\d+)?\s*(?:시간|일|주)/g),
+  ];
+  if (durations.length) {
+    if (
+      durations.length !== 1 ||
+      /아니|않|인지|또는|이상|최소|최대|~|에서/.test(text)
+    )
+      return "unknown";
+    return explicitDurationUrgency(durations[0][0]) ?? "unknown";
+  }
   if (/오늘|내일|시간 (남|뒤|후)|시간남|몇 시간|자정|당장|지금 바로/.test(text))
     return "today";
   if (/이번 주|일주일|며칠|이틀|사흘|주말|다음 주|3일|4일|5일/.test(text))
@@ -146,8 +161,6 @@ export class RuleBasedGateway implements ModelGateway {
       // "8시간 남았어요"처럼 명시적인 마감은 어느 질문에 답하던 중이든 마감으로 갱신한다.
       if (raw && (!situation.deadline.raw || explicitDeadline))
         situation.deadline.raw = raw;
-      if (explicitDeadline && situation.deadline.urgency === "unknown")
-        situation.deadline.urgency = "today";
       const onlyDeadline = explicitDeadline && text.length <= 20;
 
       situation.consideredActions = dedupe([
@@ -303,6 +316,10 @@ export class FallbackGateway implements ModelGateway {
     try {
       return await this.primary.analyze(input);
     } catch (error) {
+      if (input.situation.studentContext) {
+        this.log(`${this.label} analyze failed; preserving structured context`);
+        throw new Error("Structured context analysis failed. Please retry.");
+      }
       this.log(
         `${this.label} analyze failed; answering this turn with the rule-based gateway (${describeError(error)})`,
       );
@@ -374,7 +391,13 @@ export function createModelGateway(
   try {
     return new FallbackGateway(
       "gemini",
-      new GeminiGateway(key, rule, config.model),
+      new GeminiGateway(
+        key,
+        rule,
+        config.model,
+        undefined,
+        env.ENABLE_CONTEXT_META_WRITE === "true",
+      ),
       rule,
       log,
     );
