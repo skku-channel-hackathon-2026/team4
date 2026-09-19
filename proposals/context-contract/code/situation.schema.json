@@ -1,0 +1,720 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "category", "situation", "searchMapping"],
+  "properties": {
+    "schemaVersion": {
+      "const": "0.2-draft"
+    },
+    "category": {
+      "enum": ["grades", "team_project", "club"]
+    },
+    "situation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "facts",
+        "goal",
+        "constraints",
+        "attemptedActions",
+        "consideredActions",
+        "interpretations",
+        "openQuestions"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "topic", "text", "evidence"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "topic": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["messageId", "quote"],
+                  "properties": {
+                    "messageId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "minItems": 1
+              }
+            }
+          }
+        },
+        "goal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "text", "evidence"],
+          "properties": {
+            "status": {
+              "enum": ["unknown", "known", "unsure", "withheld"]
+            },
+            "text": {
+              "type": ["string", "null"]
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["messageId", "quote"],
+                "properties": {
+                  "messageId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "quote": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "known"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "minItems": 1
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "unsure", "withheld"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "text": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "topic", "text", "evidence"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "topic": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["messageId", "quote"],
+                  "properties": {
+                    "messageId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "minItems": 1
+              }
+            }
+          }
+        },
+        "attemptedActions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "items"],
+          "properties": {
+            "status": {
+              "enum": ["unknown", "known", "unsure", "withheld"]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "topic", "text", "evidence"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "topic": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["messageId", "quote"],
+                      "properties": {
+                        "messageId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "unsure", "withheld"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "items": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "consideredActions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "text",
+              "origin",
+              "status",
+              "evidence",
+              "actionTag",
+              "confirmationEvidence"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "origin": {
+                "enum": ["user", "suggested"]
+              },
+              "status": {
+                "enum": ["proposed", "confirmed", "rejected"]
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["messageId", "quote"],
+                  "properties": {
+                    "messageId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "actionTag": {
+                "type": ["string", "null"]
+              },
+              "confirmationEvidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["messageId", "quote"],
+                  "properties": {
+                    "messageId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "origin": {
+                      "const": "user"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "evidence": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "enum": ["confirmed", "rejected"]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "confirmationEvidence": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "interpretations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "text",
+              "basedOnFactIds",
+              "status",
+              "confirmationEvidence"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "basedOnFactIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "status": {
+                "enum": ["needs_confirmation", "confirmed", "rejected"]
+              },
+              "confirmationEvidence": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["messageId", "quote"],
+                  "properties": {
+                    "messageId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "quote": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "enum": ["confirmed", "rejected"]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "confirmationEvidence": {
+                      "minItems": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "topic", "question", "whyItMatters", "status"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "topic": {
+                "type": "string",
+                "minLength": 1
+              },
+              "question": {
+                "type": "string",
+                "minLength": 1
+              },
+              "whyItMatters": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": ["unasked", "answered", "unsure", "withheld", "asked"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "searchMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vocabVersion",
+        "problem_type",
+        "constraint_tags",
+        "urgency",
+        "goal_tags"
+      ],
+      "properties": {
+        "vocabVersion": {
+          "const": 2
+        },
+        "problem_type": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "items"],
+          "properties": {
+            "status": {
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value", "evidence"],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["messageId", "quote"],
+                      "properties": {
+                        "messageId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "items": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "constraint_tags": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "items"],
+          "properties": {
+            "status": {
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value", "evidence"],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["messageId", "quote"],
+                      "properties": {
+                        "messageId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "items": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "goal_tags": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "items"],
+          "properties": {
+            "status": {
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value", "evidence"],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["messageId", "quote"],
+                      "properties": {
+                        "messageId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "items": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "urgency": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "items"],
+          "properties": {
+            "status": {
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["value", "evidence"],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["messageId", "quote"],
+                      "properties": {
+                        "messageId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "minItems": 1
+                  }
+                }
+              },
+              "maxItems": 1
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "items": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Failfair contextual situation draft"
+}

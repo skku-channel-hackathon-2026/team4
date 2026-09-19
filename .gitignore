@@ -13,3 +13,5 @@
 .dev.vars*
 cloudflare/static/
 cloudflare/bundle/
+
+server/evaluation-results/

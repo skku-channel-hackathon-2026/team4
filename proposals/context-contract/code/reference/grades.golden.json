@@ -1,0 +1,107 @@
+{
+  "$comment": "검색 정답 기준. expect_top_case_id = 1순위여야 함. expect_case_ids_unordered = 순서 무관하게 모두 포함되어야 함(다른 사례가 같이 나오는 건 무방). expect_no_case = 사례 없음이 정답. 점수 값 자체는 고정하지 않는다(5.2 가중치는 조정 대상).",
+  "category": "grades",
+  "queries": [
+    {
+      "id": "gq-gr-01",
+      "$intent": "13절 대표 상황 '시험 이후 성적 회복'의 기본 3분기. 세 행동이 각각 다른 사례로 갈라져야 한다.",
+      "situation": {
+        "problem_type": ["grade_drop"],
+        "constraint_tags": [
+          "major_required_course",
+          "relative_grading",
+          "grade_weight_high"
+        ],
+        "urgency": "over_1_week",
+        "goal_tags": ["recover_grade"]
+      },
+      "actions": [
+        {
+          "action_tag": "change_study_method",
+          "expect_top_case_id": "demo-gr-001"
+        },
+        { "action_tag": "ask_for_help", "expect_top_case_id": "demo-gr-002" },
+        {
+          "action_tag": "revisit_course_plan",
+          "expect_top_case_id": "demo-gr-003"
+        }
+      ]
+    },
+    {
+      "id": "gq-gr-02",
+      "$intent": "5.3 세 번째 분기. 같은 change_study_method인데 한쪽은 회복, 한쪽은 F다. 한쪽만 정답처럼 고르면 실패.",
+      "situation": {
+        "problem_type": ["grade_drop", "deadline_crunch"],
+        "constraint_tags": ["major_required_course"],
+        "urgency": "4_7_days",
+        "goal_tags": ["recover_grade"]
+      },
+      "actions": [
+        {
+          "action_tag": "change_study_method",
+          "expect_case_ids_unordered": ["demo-gr-001", "demo-gr-004"],
+          "expect_conflicting_outcomes": true
+        }
+      ]
+    },
+    {
+      "id": "gq-gr-03",
+      "$intent": "5.3 첫 번째 분기. 성적 이의신청은 어휘에는 있으나 사례가 0건이다. '연결할 사례가 아직 없습니다'가 정상 결과이며 다른 행동 사례로 대체하면 실패.",
+      "situation": {
+        "problem_type": ["grade_drop"],
+        "constraint_tags": ["relative_grading", "grade_weight_high"],
+        "urgency": "1_3_days",
+        "goal_tags": ["protect_grade"]
+      },
+      "actions": [
+        { "action_tag": "request_grade_review", "expect_no_case": true }
+      ]
+    },
+    {
+      "id": "gq-gr-04",
+      "$intent": "5.3 두 번째 분기. 긴급도(1~3일)와 제약(상대평가·전공필수)이 다른 참고 사례. 반환은 하되 차이가 노출되어야 한다.",
+      "situation": {
+        "problem_type": ["grade_drop"],
+        "constraint_tags": [
+          "relative_grading",
+          "major_required_course",
+          "scholarship_at_risk"
+        ],
+        "urgency": "1_3_days",
+        "goal_tags": ["recover_grade"]
+      },
+      "actions": [
+        {
+          "action_tag": "change_study_method",
+          "expect_also_returned": ["demo-gr-006"],
+          "expect_difference_surfaced": [
+            "urgency",
+            "relative_grading",
+            "major_required_course"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gq-gr-05",
+      "$intent": "5.1 다행동 사례. 같은 사례가 두 행동에 동시에 선택된다. 동일 사례임을 명시하고 독립 근거 2건으로 세지 않아야 한다.",
+      "situation": {
+        "problem_type": ["grade_drop", "course_load_overrun"],
+        "constraint_tags": ["major_required_course", "graduation_deadline"],
+        "urgency": "4_7_days",
+        "goal_tags": ["protect_grade"]
+      },
+      "actions": [
+        {
+          "action_tag": "ask_for_help",
+          "expect_case_included": "demo-gr-005"
+        },
+        {
+          "action_tag": "revisit_course_plan",
+          "expect_case_included": "demo-gr-005"
+        }
+      ],
+      "expect_same_case_marked_shared": ["demo-gr-005"]
+    }
+  ]
+}

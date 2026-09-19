@@ -1,3 +1,4 @@
+import { GeminiGateway } from "./gemini.gateway.js";
 import {
   ACTION_TAGS,
   CATEGORIES,
@@ -288,8 +289,17 @@ export function firstPrompt(category: Category): string {
 export function createModelGateway(
   env: Record<string, string | undefined> = process.env,
 ): ModelGateway {
-  if (env.MODEL_PROVIDER && env.MODEL_API_KEY) {
-    // TODO(C): LLM 게이트웨이 구현체를 여기서 반환한다. 출력은 Zod로 검증할 것.
+  if (env.MODEL_PROVIDER === "gemini") {
+    const key = env.GEMINI_API_KEY ?? env.MODEL_API_KEY;
+    if (!key)
+      throw new Error("GEMINI_API_KEY is required for MODEL_PROVIDER=gemini");
+    return new GeminiGateway(
+      key,
+      new RuleBasedGateway(),
+      env.GEMINI_MODEL ?? "gemini-3.1-flash-lite",
+    );
   }
+  if (env.MODEL_PROVIDER && env.MODEL_PROVIDER !== "rule")
+    throw new Error("Unsupported MODEL_PROVIDER");
   return new RuleBasedGateway();
 }
