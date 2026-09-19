@@ -29,7 +29,7 @@ for (const path of ["/functions", "/functions/v1"]) {
     send(path, signature),
   ])) {
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /tutorial\.open/);
+    assert.match(await response.text(), /failfair\.open/);
   }
   assert.equal((await send(path)).status, 401);
   assert.equal((await send(path, "invalid")).status, 401);
