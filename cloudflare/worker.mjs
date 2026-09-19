@@ -19,7 +19,11 @@ const http = httpServerHandler(server);
 export default {
   async fetch(request, bindings, context) {
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/") {
+    if (
+      request.method === "GET" &&
+      url.pathname === "/" &&
+      ["127.0.0.1", "localhost"].includes(url.hostname)
+    ) {
       return Response.redirect(
         new URL("/resource/wam/tutorial/?bridge=server", url),
         302,

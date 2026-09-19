@@ -67,6 +67,7 @@ async function playSpeech(
       const buffer = source.addSourceBuffer('audio/mpeg')
       const reader = response.body.getReader()
       let playing: Promise<void> | undefined
+      let ended: Promise<void> | undefined
       try {
         while (!signal.aborted) {
           const { value, done } = await reader.read()
@@ -76,14 +77,16 @@ async function playSpeech(
           buffer.appendBuffer(value)
           await appended
           if (!playing) {
+            // Register before playback: a very short line can finish while the
+            // final network chunk is still being handled.
+            ended = wait(audio, 'ended')
+            void ended.catch(() => undefined)
             playing = audio.play()
             // Observe immediately, even while more chunks are still arriving.
             void playing.catch(() => undefined)
           }
         }
-        if (!playing) throw new Error('빈 음성이 반환됐어요.')
-        const ended = wait(audio, 'ended')
-        void ended.catch(() => undefined)
+        if (!playing || !ended) throw new Error('빈 음성이 반환됐어요.')
         source.endOfStream()
         await playing
         await ended
