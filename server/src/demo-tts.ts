@@ -58,6 +58,8 @@ export async function demoTts(
       ? env.ELEVENLABS_STUDENT_VOICE_ID
       : env.ELEVENLABS_ASSISTANT_VOICE_ID;
   if (!voice) return fail(503, "학생·선배 목소리를 설정해 주세요.");
+  const headerTimeout = new AbortController();
+  const timer = setTimeout(() => headerTimeout.abort(), 30000);
   try {
     const audio = await upstream(
       `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=mp3_44100_128`,
@@ -72,9 +74,12 @@ export async function demoTts(
           model_id: env.ELEVENLABS_MODEL_ID || "eleven_flash_v2_5",
           language_code: "ko",
         }),
-        signal: AbortSignal.any([request.signal, AbortSignal.timeout(30000)]),
+        // The 30s limit is only for receiving response headers. Once streaming
+        // starts, the caller's signal controls the lifetime of the audio body.
+        signal: AbortSignal.any([request.signal, headerTimeout.signal]),
       },
     );
+    clearTimeout(timer);
     if (!audio.ok || !audio.body)
       return fail(502, "음성을 만들지 못했어요. 텍스트로 계속 진행해 주세요.");
     return new Response(audio.body, {
@@ -82,5 +87,7 @@ export async function demoTts(
     });
   } catch {
     return fail(502, "음성 연결이 지연돼요. 텍스트로 계속 진행해 주세요.");
+  } finally {
+    clearTimeout(timer);
   }
 }
