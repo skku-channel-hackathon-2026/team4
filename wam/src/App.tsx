@@ -21,7 +21,7 @@ import type {
 
 import ErrorNotice from './components/failfair/ErrorNotice'
 import StepProgress from './components/failfair/StepProgress'
-import { useFailfairApi } from './hooks/useFailfairApi'
+import { newRequestId, useFailfairApi } from './hooks/useFailfairApi'
 import { useFailfairWamData } from './hooks/useFailfairWamData'
 import ActionsReviewPage from './pages/Failfair/ActionsReview'
 import CaseDetailPage from './pages/Failfair/CaseDetail'
@@ -87,8 +87,14 @@ function App() {
   const [helpfulIds, setHelpfulIds] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<FailfairError | null>(null)
-  /** 서버까지 가지 못한 내 메시지. 말풍선에 "다시 보내기"를 붙인다. */
-  const [failedSend, setFailedSend] = useState<string | null>(null)
+  /**
+   * 서버까지 가지 못한 내 메시지들의 `at`. 말풍선마다 "다시 보내기"를 붙인다.
+   *
+   * 메시지 하나로 뭉뚱그리면, A가 실패한 뒤 B를 보내 성공했을 때 A의 실패
+   * 표시까지 지워져서 화면에는 둘 다 정상으로 보이는데 서버는 B만 받은
+   * 상태가 된다. 그래서 메시지별로 따로 들고 있는다.
+   */
+  const [failedAts, setFailedAts] = useState<ReadonlySet<number>>(new Set())
   /** 비교 중일 때 스켈레톤 카드 수를 맞추기 위한 값 */
   const [comparingCount, setComparingCount] = useState(0)
   /** 첫 화면에서 고른 전공. 세션 시작부터 상황에 실어 보낸다. */
@@ -216,17 +222,34 @@ function App() {
         results: [],
       })
       setHelpfulIds(new Set())
-      setFailedSend(null)
+      setFailedAts(new Set())
       setScreen({ kind: 'student', step: 'chat' })
     }, '대화를 시작하지 못했어요.')
 
-  const deliver = (text: string, at: number) =>
+  const mark = (at: number, failed: boolean) =>
+    setFailedAts((current) => {
+      if (current.has(at) === failed) return current
+      const next = new Set(current)
+      if (failed) next.add(at)
+      else next.delete(at)
+      return next
+    })
+
+  /**
+   * 말풍선 하나를 서버로 보낸다. `at`은 그 말풍선의 식별자이자 실패 표시의 키다.
+   *
+   * `requestId`는 이 말풍선에 한 번만 만들어 두고 재전송에도 그대로 쓴다.
+   * 서버가 이미 처리했는데 응답만 유실된 경우 중복으로 한 번 더 처리되지 않고
+   * 저장된 응답을 되찾는다.
+   */
+  const deliver = (text: string, at: number) => {
+    const requestId = newRequestId()
     void run(
       async () => {
         const live = sessionRef.current
         if (!live) return
-        setFailedSend(null)
-        const replied = await api.reply(live.id, live.revision, text)
+        const replied = await api.reply(live.id, live.revision, text, requestId)
+        mark(at, false)
         setSession((current) =>
           current
             ? {
@@ -247,8 +270,9 @@ function App() {
         )
       },
       '메시지를 보내지 못했어요.',
-      () => setFailedSend(text)
+      () => mark(at, true)
     )
+  }
 
   const send = (text: string) => {
     if (!session) return
@@ -263,15 +287,21 @@ function App() {
     deliver(text, now)
   }
 
-  /** 실패한 메시지는 말풍선을 새로 쌓지 않고 같은 내용을 한 번 더 보낸다. */
-  const resend = () => {
-    if (!failedSend) return
-    deliver(failedSend, Date.now())
+  /** 실패한 말풍선을 같은 자리에서 한 번 더 보낸다. 새로 쌓지 않는다. */
+  const resend = (at: number) => {
+    const text = session?.messages.find(
+      (message) => message.at === at && message.role === 'student'
+    )?.content
+    if (!text) return
+    deliver(text, at)
   }
 
   /** 남은 질문을 한 번에 건너뛰고 상황 확인으로 넘어간다. */
   const skipRemaining = () => {
     if (!sessionRef.current) return
+    // 회차마다 고정된 requestId. 재시도해도 같은 값을 써서, 서버가 이미 처리한
+    // 회차는 저장된 응답으로 되돌아오고 중복으로 한 번 더 건너뛰지 않는다.
+    const requestIds = Array.from({ length: MAX_SKIPS }, () => newRequestId())
     void run(async () => {
       let current = sessionRef.current
       if (!current) return
@@ -280,7 +310,12 @@ function App() {
       const before = current.messages
       const at = Date.now()
       for (let attempt = 0; attempt < MAX_SKIPS; attempt += 1) {
-        const replied = await api.reply(current.id, current.revision, SKIP_TEXT)
+        const replied = await api.reply(
+          current.id,
+          current.revision,
+          SKIP_TEXT,
+          requestIds[attempt]
+        )
         current = {
           ...current,
           state: replied.state,
@@ -308,13 +343,15 @@ function App() {
 
   const confirmSituation = (situation: Situation) => {
     if (!sessionRef.current) return
+    const requestId = newRequestId()
     void run(async () => {
       const live = sessionRef.current
       if (!live) return
       const confirmed = await api.confirmSituation(
         live.id,
         live.revision,
-        situation
+        situation,
+        requestId
       )
       setSession({
         ...live,
@@ -337,10 +374,16 @@ function App() {
     sessionRef.current = { ...opened, actions, results: [] }
     setSession(sessionRef.current)
     setScreen({ kind: 'student', step: 'compare' })
+    const requestId = newRequestId()
     void run(async () => {
       const current = sessionRef.current
       if (!current) return
-      const compared = await api.compare(current.id, current.revision, actions)
+      const compared = await api.compare(
+        current.id,
+        current.revision,
+        actions,
+        requestId
+      )
       setSession({
         ...current,
         state: compared.state,
@@ -386,7 +429,7 @@ function App() {
     setCaseDetail(null)
     setNotice('')
     setError(null)
-    setFailedSend(null)
+    setFailedAts(new Set())
     setComparingCount(0)
     setScreen({ kind: 'student', step: 'category' })
   }
@@ -506,6 +549,13 @@ function App() {
               대화로 상황을 정리하고, 내가 고려하는 행동마다 실제 선배에게 무슨
               일이 있었는지 봐요.
             </Text>
+            <Text
+              as="span"
+              typo="12"
+              color="text-neutral-lighter"
+            >
+              적은 내용은 이 대화 안에서만 쓰여요.
+            </Text>
           </button>
           <button
             type="button"
@@ -527,6 +577,13 @@ function App() {
               그때 상황, 실제로 한 행동, 결과와 비용, 다음 사람이 쓸 도구를
               남겨요.
             </Text>
+            <Text
+              as="span"
+              typo="12"
+              color="text-neutral-lighter"
+            >
+              등록한 사례는 검수를 거쳐 다른 학생에게 보여질 수 있어요.
+            </Text>
           </button>
         </VStack>
         <Text
@@ -534,8 +591,7 @@ function App() {
           typo="12"
           color="text-neutral-lighter"
         >
-          실명이나 상대 이름은 적지 않아도 돼요. 적은 내용은 이 대화 안에서만
-          쓰입니다.
+          어느 쪽이든 실명이나 상대 이름은 적지 않아도 돼요.
         </Text>
       </VStack>
     )
@@ -571,7 +627,7 @@ function App() {
             state={session.state}
             situation={session.situation}
             busy={busy}
-            failedSend={failedSend}
+            failedAts={failedAts}
             onSend={send}
             onResend={resend}
             onSkipRemaining={skipRemaining}

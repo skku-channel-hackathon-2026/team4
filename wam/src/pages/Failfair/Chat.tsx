@@ -17,27 +17,16 @@ interface ChatPageProps {
   /** 지금까지 서버가 채운 상황. 수집 현황 카드에 그대로 쓴다. */
   situation: Situation
   busy: boolean
-  /** 서버까지 가지 못한 내 메시지 내용. 없으면 null. */
-  failedSend: string | null
+  /**
+   * 서버까지 가지 못한 내 메시지들의 `at`. 말풍선마다 따로 표시한다. 하나로
+   * 뭉뚱그리면 뒤 메시지가 성공했을 때 앞 메시지의 실패가 지워져, 서버가 받지
+   * 못한 말이 화면에는 정상으로 남는다.
+   */
+  failedAts: ReadonlySet<number>
   onSend: (text: string) => void
-  onResend: () => void
+  onResend: (at: number) => void
   onSkipRemaining: () => void
   onReview: () => void
-}
-
-/**
- * 못 보낸 메시지가 놓인 자리. 내용까지 맞춰 본다.
- *
- * STALE_SESSION 뒤에는 대화 기록을 서버 것으로 다시 받아 오는데, 실패한
- * 메시지는 그 안에 없다. 위치만 보고 붙이면 엉뚱한 말풍선에 "보내지 못했어요"가
- * 달린다.
- */
-function failedIndexOf(messages: Message[], text: string): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role === 'student' && message.content === text) return index
-  }
-  return -1
 }
 
 /** v2 §3.1 2단계: 자유 입력창과 대화 기록. 건너뛰기와 확인 단계 이동 제공. */
@@ -46,7 +35,7 @@ function ChatPage({
   state,
   situation,
   busy,
-  failedSend,
+  failedAts,
   onSend,
   onResend,
   onSkipRemaining,
@@ -54,7 +43,9 @@ function ChatPage({
 }: ChatPageProps) {
   const [draft, setDraft] = useState('')
   const endRef = useRef<HTMLDivElement | null>(null)
-  const failedIndex = failedSend ? failedIndexOf(messages, failedSend) : -1
+  const unsent = messages.filter(
+    (message) => message.role === 'student' && failedAts.has(message.at)
+  ).length
 
   // 새 말풍선이 생기면 본문 맨 아래로 내린다. 기준점을 대화 기록 안이 아니라
   // 페이지 끝에 두어야 마지막 말풍선과 입력창이 함께 보인다. 기록 안에 두면
@@ -73,17 +64,32 @@ function ChatPage({
   return (
     <VStack spacing={8}>
       <div className="ff-log">
-        {messages.map((message, index) => (
-          <Bubble
-            key={`${message.at}-${index}`}
-            role={message.role}
-            content={message.content}
-            failed={index === failedIndex}
-            onRetry={onResend}
-          />
-        ))}
+        {messages.map((message, index) => {
+          const failed = message.role === 'student' && failedAts.has(message.at)
+          return (
+            <Bubble
+              key={`${message.at}-${index}`}
+              role={message.role}
+              content={message.content}
+              failed={failed}
+              onRetry={failed ? () => onResend(message.at) : undefined}
+            />
+          )
+        })}
         {busy && <TypingBubble />}
       </div>
+
+      {unsent > 0 && (
+        <div className="ff-box ff-warn">
+          <Text
+            as="p"
+            typo="13"
+          >
+            아직 보내지 못한 말이 {unsent}개 있어요. 그 말풍선의 &lsquo;다시
+            보내기&rsquo;를 눌러야 상담에 반영돼요.
+          </Text>
+        </div>
+      )}
 
       {state === 'COLLECTING' && situation.situation && (
         <CollectedSummary
