@@ -29,6 +29,9 @@ export const FAILFAIR_FUNCTIONS = {
   sosRequest: "failfair.sosRequest",
   sosList: "failfair.sosList",
   sosRespond: "failfair.sosRespond",
+  /** 수락된 SOS 안에서 주고받는 말. 앱 안 스레드라 채널톡 DM 권한과 무관하게 이어진다. */
+  sosSend: "failfair.sosSend",
+  sosThread: "failfair.sosThread",
   // 런타임 모델 설정 (운영진 없이 Gemini 켜고 끄기)
   getModel: "failfair.getModel",
   setModel: "failfair.setModel",
@@ -41,8 +44,10 @@ export const FAILFAIR_ERRORS = {
   staleSession: "STALE_SESSION",
   modelUnavailable: "MODEL_UNAVAILABLE",
   inProgress: "IN_PROGRESS",
-  /** SOS는 서버가 서명한 그룹 채팅 표식이 있어야 보낼 수 있다. */
+  /** (예전) SOS는 서버가 서명한 그룹 채팅 표식이 있어야 보낼 수 있었다. 지금은 표식이 없어도 보낸다. */
   chatTargetRequired: "CHAT_TARGET_REQUIRED",
+  /** 이 카테고리에 연락을 허용한 실제 선배가 아직 없다. */
+  noSeniorAvailable: "NO_SENIOR_AVAILABLE",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -795,6 +800,8 @@ export const SosRequestSchema = z.object({
   status: SosStatusSchema,
   createdAt: z.number(),
   respondedAt: z.number().optional(),
+  /** 앱이 두 사람 사이에 연 채널톡 1:1 DM. 앱에 그 권한이 없으면 비어 있다. */
+  directChatId: z.string().optional(),
 });
 export type SosRequest = z.infer<typeof SosRequestSchema>;
 
@@ -806,18 +813,49 @@ export const SOS_STATUS_LABELS: Record<SosStatus, string> = {
 
 export const SosRequestInputSchema = z.object({
   sessionId: z.string().min(1),
-  caseId: z.string().min(1),
+  /**
+   * 어느 사례의 선배에게 보낼지. 비우면 서버가 고른다: 이 대화의 결과에 연결된
+   * 연락 가능한 실제 선배를 우선하고, 없으면 같은 카테고리에서 연락을 허용한 선배.
+   */
+  caseId: z.string().min(1).optional(),
   /** 전송 단위 ID. 응답만 잃고 재시도해도 같은 값을 보내면 서버가 같은 요청을 돌려준다 (새 SOS가 늘지 않는다). */
   requestId: z.string().min(1),
   message: z.string().trim().min(1).max(500),
-  /** WAM이 받은 `chatToken`을 그대로 돌려준다. 서버가 서명·채널·본인·만료를 확인한다. */
+  /** WAM이 받은 `chatToken`을 그대로 돌려준다. 서버가 서명·채널·본인·만료를 확인하고, 맞으면 그 그룹에 봇 알림을 올린다. */
   chatTarget: z.string().default(""),
 });
 export const SosRequestOutputSchema = z.object({
   request: SosRequestSchema,
   /** 봇 알림이 그룹 채팅에 올라갔는지. 실패해도 요청은 저장된다. */
   notified: z.boolean(),
+  /** 두 사람 사이 채널톡 1:1 DM을 열고 SOS 문구를 올렸는지. */
+  directChat: z.boolean().default(false),
 });
+
+/** 수락된 SOS 안의 말 하나. */
+export const SosMessageSchema = z.object({
+  id: z.string().min(1),
+  sosId: z.string().min(1),
+  senderManagerId: z.string().min(1),
+  role: z.enum(["student", "senior"]),
+  text: z.string(),
+  createdAt: z.number(),
+});
+export type SosMessage = z.infer<typeof SosMessageSchema>;
+
+export const SosSendInputSchema = z.object({
+  sosId: z.string().min(1),
+  /** 전송 단위 ID. 재시도에도 같은 값을 쓰면 같은 말이 두 번 쌓이지 않는다. */
+  requestId: z.string().min(1),
+  text: z.string().trim().min(1).max(1000),
+});
+export const SosSendOutputSchema = z.object({ message: SosMessageSchema });
+export const SosThreadInputSchema = z.object({ sosId: z.string().min(1) });
+export const SosThreadOutputSchema = z.object({
+  request: SosRequestSchema,
+  messages: z.array(SosMessageSchema),
+});
+export type SosThread = z.infer<typeof SosThreadOutputSchema>;
 export const SosListInputSchema = z.object({
   role: z.enum(["student", "senior"]),
 });
@@ -831,6 +869,8 @@ export const SosRespondInputSchema = z.object({
 export const SosRespondOutputSchema = z.object({
   request: SosRequestSchema,
   notified: z.boolean(),
+  /** 수락 문구를 두 사람의 채널톡 DM에도 올렸는지. */
+  directChat: z.boolean().default(false),
 });
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,10 @@ import {
   SosRequestOutputSchema,
   SosRespondInputSchema,
   SosRespondOutputSchema,
+  SosSendInputSchema,
+  SosSendOutputSchema,
+  SosThreadInputSchema,
+  SosThreadOutputSchema,
   ModelStatusSchema,
   SetModelInputSchema,
   StartInputSchema,
@@ -76,7 +80,10 @@ import {
 import { matchActions } from "./retrieval.service.js";
 import {
   SosService,
+  chooseContactableCase,
   isContactable,
+  sosDirectAcceptedText,
+  sosDirectRequestText,
   sosRequestedText,
   sosRespondedText,
 } from "./sos.service.js";
@@ -464,7 +471,7 @@ export class FailfairFunctions {
 
   @Func(FAILFAIR_FUNCTIONS.sosRequest)
   @Description(
-    "새내기가 사례를 남긴 실제 선배에게 SOS를 보낸다. 그룹 채팅에서만 보낼 수 있고 그 방에 봇 알림을 올린다",
+    "새내기가 연락 가능한 실제 선배에게 SOS를 보낸다. 사례를 안 고르면 서버가 매칭한다. 두 사람의 DM을 열고, 그룹에서 열었으면 그 방에도 봇 알림을 올린다",
   )
   @InputSchema(SosRequestInputSchema)
   @OutputSchema(SosRequestOutputSchema)
@@ -473,47 +480,76 @@ export class FailfairFunctions {
     @Input() input: z.infer<typeof SosRequestInputSchema>,
   ): Promise<z.infer<typeof SosRequestOutputSchema>> {
     const managerId = requireOwner(ctx);
-    // 알림이 갈 방은 `open`에서 서명해 둔 표식으로만 정한다. 그래야 다른 그룹을
-    // 겨냥해 봇 메시지를 올릴 수 없고, 그룹이 아닌 방에서 시작한 요청도 막힌다.
+    // 봇 알림이 갈 그룹은 `open`에서 서명해 둔 표식으로만 정한다. 그래야 다른 그룹을
+    // 겨냥해 봇 메시지를 올릴 수 없다. 표식이 없으면(그룹이 아닌 방) 그룹 알림만 건너뛴다.
     const target = verifyChatTarget(input.chatTarget, appSecret, {
       channelId: ctx.channel.id,
       managerId,
     });
-    if (!target) {
-      throw new FunctionCallError(
-        "SOS requires a verified group chat",
-        FunctionCallErrorCode.BadRequest,
-        { type: FAILFAIR_ERRORS.chatTargetRequired },
+    const session = await this.sessions.load(ctx, input.sessionId);
+    let item: Case | undefined;
+    if (input.caseId) {
+      item = await this.cases.get(input.caseId);
+      if (!item || item.status !== "approved") {
+        throw new FunctionCallError(
+          "Case not found",
+          FunctionCallErrorCode.NotFound,
+          { type: FAILFAIR_ERRORS.notFoundOrForbidden },
+        );
+      }
+    } else {
+      // 매칭: 이 대화의 결과에 연결된 선배를 우선, 없으면 같은 카테고리의 연락 허용 선배.
+      item = chooseContactableCase(
+        await this.cases.listApproved(session.category),
+        session.results.flatMap((result) =>
+          result.caseId ? [result.caseId] : [],
+        ),
+        managerId,
       );
-    }
-    await this.sessions.load(ctx, input.sessionId);
-    const item = await this.cases.get(input.caseId);
-    if (!item || item.status !== "approved") {
-      throw new FunctionCallError(
-        "Case not found",
-        FunctionCallErrorCode.NotFound,
-        { type: FAILFAIR_ERRORS.notFoundOrForbidden },
-      );
+      if (!item) {
+        throw new FunctionCallError(
+          "No contactable senior in this category yet",
+          FunctionCallErrorCode.NotFound,
+          { type: FAILFAIR_ERRORS.noSeniorAvailable },
+        );
+      }
     }
     const { request, created } = await this.sos.request({
       item,
       channelId: ctx.channel.id,
-      chatId: target.groupId,
-      chatType: "group",
-      chatTitle: target.chatTitle ?? "",
+      chatId: target?.groupId ?? "",
+      chatType: target ? "group" : "",
+      chatTitle: target?.chatTitle ?? "",
       studentManagerId: managerId,
       message: input.message,
       requestId: input.requestId,
     });
-    const notified = created
-      ? await this.notifier.notify({
-          channelId: ctx.channel.id,
-          chatId: request.chatId,
-          chatType: request.chatType,
-          text: sosRequestedText(request),
-        })
-      : false;
-    return { request, notified };
+    if (!created) return { request, notified: false, directChat: false };
+
+    // 1) 두 사람 사이 채널톡 DM을 열고 새내기 이름으로 SOS 문구를 올린다. 선배는 DM 알림을 받는다.
+    //    앱에 권한이 없으면 조용히 건너뛴다. 그래도 요청은 저장돼 선배 수신함에 보인다.
+    let directChat = false;
+    const directChatId = await this.notifier.openDirectChat({
+      channelId: ctx.channel.id,
+      managerIds: [request.studentManagerId, request.seniorManagerId],
+    });
+    if (directChatId) {
+      await this.sos.attachDirectChat(request, directChatId);
+      directChat = await this.notifier.writeDirect({
+        channelId: ctx.channel.id,
+        directChatId,
+        managerId: request.studentManagerId,
+        text: sosDirectRequestText(request),
+      });
+    }
+    // 2) 그룹에서 열었으면 그 방에도 봇 알림.
+    const notified = await this.notifier.notify({
+      channelId: ctx.channel.id,
+      chatId: request.chatId,
+      chatType: request.chatType,
+      text: sosRequestedText(request),
+    });
+    return { request, notified, directChat };
   }
 
   @Func(FAILFAIR_FUNCTIONS.sosList)
@@ -547,15 +583,58 @@ export class FailfairFunctions {
       input.sosId,
       input.status,
     );
-    const notified = changed
-      ? await this.notifier.notify({
-          channelId: ctx.channel.id,
-          chatId: request.chatId,
-          chatType: request.chatType,
-          text: sosRespondedText(request),
-        })
-      : false;
-    return { request, notified };
+    if (!changed) return { request, notified: false, directChat: false };
+    const directChat =
+      request.status === "accepted" && request.directChatId
+        ? await this.notifier.writeDirect({
+            channelId: ctx.channel.id,
+            directChatId: request.directChatId,
+            managerId: request.seniorManagerId,
+            text: sosDirectAcceptedText(request),
+          })
+        : false;
+    const notified = await this.notifier.notify({
+      channelId: ctx.channel.id,
+      chatId: request.chatId,
+      chatType: request.chatType,
+      text: sosRespondedText(request),
+    });
+    return { request, notified, directChat };
+  }
+
+  @Func(FAILFAIR_FUNCTIONS.sosThread)
+  @Description(
+    "SOS의 최신 상태와 앱 안에서 주고받은 말. 두 당사자만 볼 수 있다",
+  )
+  @InputSchema(SosThreadInputSchema)
+  @OutputSchema(SosThreadOutputSchema)
+  async sosThread(
+    @Ctx() ctx: Context,
+    @Input() input: z.infer<typeof SosThreadInputSchema>,
+  ): Promise<z.infer<typeof SosThreadOutputSchema>> {
+    const managerId = requireOwner(ctx);
+    return this.sos.thread(ctx.channel.id, managerId, input.sosId);
+  }
+
+  @Func(FAILFAIR_FUNCTIONS.sosSend)
+  @Description(
+    "수락된 SOS 안에서 말을 보낸다. 두 당사자만, 같은 requestId는 한 번만",
+  )
+  @InputSchema(SosSendInputSchema)
+  @OutputSchema(SosSendOutputSchema)
+  async sosSend(
+    @Ctx() ctx: Context,
+    @Input() input: z.infer<typeof SosSendInputSchema>,
+  ): Promise<z.infer<typeof SosSendOutputSchema>> {
+    const managerId = requireOwner(ctx);
+    const message = await this.sos.send(
+      ctx.channel.id,
+      managerId,
+      input.sosId,
+      input.requestId,
+      input.text,
+    );
+    return { message };
   }
 
   // ---------------------------------------------------------------- 모델 설정

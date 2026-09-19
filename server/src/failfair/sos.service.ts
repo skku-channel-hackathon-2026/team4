@@ -4,8 +4,10 @@ import {
 } from "@channel.io/app-sdk-server";
 import {
   FAILFAIR_ERRORS,
+  SosMessageSchema,
   SosRequestSchema,
   type Case,
+  type SosMessage,
   type SosRequest,
 } from "@tutorial/shared";
 import { changedRows, getDatabase, resultRows } from "../database.js";
@@ -36,6 +38,16 @@ export interface SosStore {
     status: "accepted" | "declined",
     now: number,
   ): Promise<SosRequest | undefined>;
+  /** 앱이 연 채널톡 DM 방 ID를 요청에 붙인다. 이미 있으면 그대로 둔다. */
+  attachDirectChat(request: SosRequest, directChatId: string): Promise<void>;
+  /** 스레드에 말을 붙인다. 같은 requestId가 다시 오면 그때 저장한 말을 돌려준다. */
+  appendMessage(
+    channelId: string,
+    message: SosMessage,
+    requestId: string,
+  ): Promise<SosMessage>;
+  /** 이 요청의 말. 오래된 순. */
+  listMessages(sosId: string): Promise<SosMessage[]>;
 }
 
 function parse(candidate: unknown): SosRequest | undefined {
@@ -142,7 +154,104 @@ export const d1SosStore: SosStore = {
       .run();
     return changedRows(result) === 1 ? updated : undefined;
   },
+
+  async attachDirectChat(request, directChatId) {
+    if (request.directChatId) return;
+    const updated: SosRequest = { ...request, directChatId };
+    await getDatabase()
+      .prepare(
+        "UPDATE failfair_sos SET body_json = ? " +
+          "WHERE id = ? AND json_extract(body_json, '$.directChatId') IS NULL",
+      )
+      .bind(JSON.stringify(updated), request.id)
+      .run();
+    request.directChatId = directChatId;
+  },
+
+  async appendMessage(channelId, message, requestId) {
+    const inserted = await getDatabase()
+      .prepare(
+        "INSERT OR IGNORE INTO failfair_sos_messages " +
+          "(id, sos_id, channel_id, sender_manager_id, role, request_id, text, created_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .bind(
+        message.id,
+        message.sosId,
+        channelId,
+        message.senderManagerId,
+        message.role,
+        requestId,
+        message.text,
+        message.createdAt,
+      )
+      .run();
+    if (changedRows(inserted) === 1) return message;
+    // 같은 전송이 두 번 들어왔다. 먼저 들어간 말이 정답이다.
+    const seen = await getDatabase()
+      .prepare(
+        "SELECT id, sos_id, sender_manager_id, role, text, created_at " +
+          "FROM failfair_sos_messages WHERE sos_id = ? AND request_id = ? LIMIT 1",
+      )
+      .bind(message.sosId, requestId)
+      .first<MessageRow>();
+    return seen ? rowToMessage(seen) : message;
+  },
+
+  async listMessages(sosId) {
+    const result = await getDatabase()
+      .prepare(
+        "SELECT id, sos_id, sender_manager_id, role, text, created_at " +
+          "FROM failfair_sos_messages WHERE sos_id = ? ORDER BY created_at, id",
+      )
+      .bind(sosId)
+      .all<MessageRow>();
+    return resultRows<MessageRow>(result).flatMap((row) => {
+      const parsed = SosMessageSchema.safeParse(rowToMessage(row));
+      return parsed.success ? [parsed.data] : [];
+    });
+  },
 };
+
+interface MessageRow {
+  id: string;
+  sos_id: string;
+  sender_manager_id: string;
+  role: string;
+  text: string;
+  created_at: number;
+}
+
+function rowToMessage(row: MessageRow): SosMessage {
+  return {
+    id: row.id,
+    sosId: row.sos_id,
+    senderManagerId: row.sender_manager_id,
+    role: row.role === "senior" ? "senior" : "student",
+    text: row.text,
+    createdAt: Number(row.created_at),
+  };
+}
+
+/**
+ * 새내기에게 붙여 줄 선배 사례를 고른다 (매칭).
+ * 이 대화의 결과에 연결된 사례 중 연락 가능한 것을 결과 순서대로 우선하고,
+ * 없으면 같은 카테고리에서 연락을 허용한 실제 선배 중 가장 최근 등록을 고른다.
+ */
+export function chooseContactableCase(
+  candidates: Case[],
+  preferredCaseIds: string[],
+  managerId: string,
+): Case | undefined {
+  const contactable = candidates.filter((item) =>
+    isContactable(item, managerId),
+  );
+  for (const caseId of preferredCaseIds) {
+    const hit = contactable.find((item) => item.id === caseId);
+    if (hit) return hit;
+  }
+  return [...contactable].sort((a, b) => b.createdAt - a.createdAt)[0];
+}
 
 /** 새내기가 이 사례의 선배에게 연락할 수 있는가. 가상 사례·연락 거부·본인 사례는 불가. */
 export function isContactable(item: Case, managerId: string): boolean {
@@ -253,6 +362,89 @@ export class SosService {
     }
     return { request: updated, changed: true };
   }
+
+  /** 요청의 두 당사자만 볼 수 있다. 아니면 존재 여부도 알려주지 않는다. */
+  private async participant(
+    channelId: string,
+    managerId: string,
+    sosId: string,
+  ): Promise<{ request: SosRequest; role: "student" | "senior" }> {
+    const request = (await this.store.list(channelId)).find(
+      (item) => item.id === sosId,
+    );
+    if (!request) throw notFound();
+    if (request.studentManagerId === managerId)
+      return { request, role: "student" };
+    if (request.seniorManagerId === managerId)
+      return { request, role: "senior" };
+    throw notFound();
+  }
+
+  /** 두 당사자가 보는 스레드. 요청의 최신 상태도 함께 돌려주므로 화면이 이걸로 상태를 새로고침한다. */
+  async thread(
+    channelId: string,
+    managerId: string,
+    sosId: string,
+  ): Promise<{ request: SosRequest; messages: SosMessage[] }> {
+    const { request } = await this.participant(channelId, managerId, sosId);
+    return { request, messages: await this.store.listMessages(sosId) };
+  }
+
+  /** 수락된 요청 안에서만 말을 보낼 수 있다. 같은 requestId 재전송은 한 번만 쌓인다. */
+  async send(
+    channelId: string,
+    managerId: string,
+    sosId: string,
+    requestId: string,
+    text: string,
+    now = Date.now(),
+  ): Promise<SosMessage> {
+    const { request, role } = await this.participant(
+      channelId,
+      managerId,
+      sosId,
+    );
+    if (request.status !== "accepted") {
+      throw new FunctionCallError(
+        "Messages can be sent only after the senior accepts",
+        FunctionCallErrorCode.Conflict,
+        { type: FAILFAIR_ERRORS.inProgress, data: { status: request.status } },
+      );
+    }
+    return this.store.appendMessage(
+      channelId,
+      {
+        id: `sosm-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        sosId,
+        senderManagerId: managerId,
+        role,
+        text,
+        createdAt: now,
+      },
+      requestId,
+    );
+  }
+
+  async attachDirectChat(
+    request: SosRequest,
+    directChatId: string,
+  ): Promise<void> {
+    await this.store.attachDirectChat(request, directChatId);
+  }
+}
+
+/** 새내기 이름으로 두 사람의 DM에 올릴 SOS 문구. */
+export function sosDirectRequestText(request: SosRequest): string {
+  return [
+    `🆘 [망선박 SOS] '${request.caseTitle}' 사례를 보고 도움을 요청드려요.`,
+    request.message,
+    "(채팅창에서 /망선박 선배 → SOS 요청에서 수락하면 앱 안에서도 이어서 대화할 수 있어요. 여기서 바로 답해 주셔도 돼요.)",
+  ].join("\n");
+}
+
+/** 선배 이름으로 DM에 올릴 수락 문구. */
+export function sosDirectAcceptedText(request: SosRequest): string {
+  return `✅ '${request.caseTitle}' SOS 수락했어요. 여기서 바로 이야기해요.`;
 }
 
 /** 그룹 채팅에 올릴 봇 문구. 사람 이름은 넣지 않는다. */

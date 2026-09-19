@@ -10,6 +10,7 @@ import {
   type Case,
   type SessionView,
   type Situation,
+  type SosMessage,
   type SosRequest,
 } from '@tutorial/shared'
 
@@ -98,8 +99,21 @@ export async function installDevBridge(): Promise<void> {
     '[dev bridge] fake 모드: 브라우저 안 축약 규칙 (서버·Gemini 호출 없음)'
   )
 
-  const cases: Case[] = [...DEMO_CASES]
+  // SOS 매칭을 브라우저에서 확인하려고 연락 허용한 실제 선배 사례 하나를 끼운다.
+  const cases: Case[] = [
+    ...DEMO_CASES,
+    {
+      ...DEMO_CASES[0]!,
+      id: 'case-dev-real',
+      title: '연락 되는 선배 (dev)',
+      sourceType: 'real',
+      allowContact: true,
+      authorManagerId: 'dev-senior',
+      createdAt: Date.now(),
+    },
+  ]
   const sosRequests: SosRequest[] = []
+  const sosMessages: SosMessage[] = []
   /** 전송 단위 requestId → 그때 만든 요청. 서버의 failfair_sos.request_id와 같은 역할. */
   const sosByRequestId = new Map<string, SosRequest>()
   let devModel: {
@@ -382,12 +396,29 @@ export async function installDevBridge(): Promise<void> {
         break
       }
       case F.sosRequest: {
-        const item = cases.find((candidate) => candidate.id === params.caseId)
-        if (!item) throw new Error('dev bridge: case not found')
-        // 서버와 같은 규칙: 서명된 그룹 채팅 표식이 없으면 보낼 수 없다.
-        if (!params.chatTarget)
-          throw Object.assign(new Error('dev bridge: chat target required'), {
-            type: FAILFAIR_ERRORS.chatTargetRequired,
+        const contactable = (candidate: Case) =>
+          candidate.status === 'approved' &&
+          candidate.sourceType === 'real' &&
+          candidate.allowContact &&
+          !!candidate.authorManagerId &&
+          candidate.authorManagerId !== data.managerId
+        // 서버와 같은 매칭: 사례를 안 고르면 결과에 연결된 선배 → 같은 카테고리의 연락 허용 선배.
+        const preferred = (session?.results ?? []).flatMap((result) =>
+          result.caseId ? [result.caseId] : []
+        )
+        const item = params.caseId
+          ? cases.find((candidate) => candidate.id === params.caseId)
+          : (preferred
+              .map((id) => cases.find((candidate) => candidate.id === id))
+              .find((candidate) => candidate && contactable(candidate)) ??
+            cases.find(
+              (candidate) =>
+                contactable(candidate) &&
+                candidate.category === session?.category
+            ))
+        if (!item)
+          throw Object.assign(new Error('dev bridge: no senior available'), {
+            type: FAILFAIR_ERRORS.noSeniorAvailable,
           })
         // 서버처럼 같은 requestId 재전송은 그때 만든 요청을 상태와 무관하게 돌려준다.
         const retransmitted = sosByRequestId.get(String(params.requestId))
@@ -418,7 +449,42 @@ export async function installDevBridge(): Promise<void> {
         }
         if (!pending) sosRequests.push(request)
         sosByRequestId.set(String(params.requestId), request)
-        result = { request, notified: !pending }
+        result = {
+          request,
+          notified: !pending && Boolean(params.chatTarget),
+          directChat: false,
+        }
+        break
+      }
+      case F.sosThread: {
+        const request = sosRequests.find((item) => item.id === params.sosId)
+        if (!request) throw new Error('dev bridge: sos not found')
+        result = {
+          request,
+          messages: sosMessages.filter((item) => item.sosId === request.id),
+        }
+        break
+      }
+      case F.sosSend: {
+        const request = sosRequests.find((item) => item.id === params.sosId)
+        if (!request) throw new Error('dev bridge: sos not found')
+        if (request.status !== 'accepted')
+          throw Object.assign(new Error('dev bridge: not accepted'), {
+            type: FAILFAIR_ERRORS.inProgress,
+          })
+        const message: SosMessage = {
+          id: `sosm-dev-${sosMessages.length + 1}`,
+          sosId: request.id,
+          senderManagerId: String(data.managerId),
+          role:
+            request.studentManagerId === String(data.managerId)
+              ? 'student'
+              : 'senior',
+          text: String(params.text),
+          createdAt: Date.now(),
+        }
+        sosMessages.push(message)
+        result = { message }
         break
       }
       case F.sosList:
@@ -437,7 +503,7 @@ export async function installDevBridge(): Promise<void> {
           request.status = params.status as SosRequest['status']
           request.respondedAt = Date.now()
         }
-        result = { request, notified: false }
+        result = { request, notified: false, directChat: false }
         break
       }
       case F.getModel:
