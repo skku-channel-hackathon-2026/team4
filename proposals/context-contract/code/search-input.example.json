@@ -1,0 +1,28 @@
+{
+  "category": "grades",
+  "situation": {
+    "problem_type": [
+      "grade_drop"
+    ],
+    "constraint_tags": [
+      "major_required_course",
+      "relative_grading",
+      "grade_weight_high"
+    ],
+    "urgency": "over_1_week",
+    "goal_tags": [
+      "recover_grade"
+    ]
+  },
+  "actions": [
+    {
+      "action_tag": "change_study_method"
+    },
+    {
+      "action_tag": "ask_for_help"
+    },
+    {
+      "action_tag": "revisit_course_plan"
+    }
+  ]
+}

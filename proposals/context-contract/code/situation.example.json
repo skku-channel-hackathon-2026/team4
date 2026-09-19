@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "0.1-draft",
+  "schemaVersion": "0.2-draft",
   "category": "grades",
   "situation": {
     "summary": "21학점과 주 4일 아르바이트를 병행하며 과제 제출에 어려움을 겪고 있고, 낙제를 피하고 싶어 함.",
@@ -70,7 +70,12 @@
       {
         "id": "i1",
         "text": "수강량 자체뿐 아니라 학업에 쓸 수 있는 시간의 제약이 핵심일 수 있음",
-        "basedOnFactIds": ["f1", "f2", "f3", "c1"],
+        "basedOnFactIds": [
+          "f1",
+          "f2",
+          "f3",
+          "c1"
+        ],
         "status": "needs_confirmation",
         "confirmationEvidence": []
       }
@@ -84,5 +89,24 @@
         "status": "unasked"
       }
     ]
+  },
+  "searchMapping": {
+    "vocabVersion": 2,
+    "problem_type": {
+      "status": "unknown",
+      "items": []
+    },
+    "constraint_tags": {
+      "status": "unknown",
+      "items": []
+    },
+    "urgency": {
+      "status": "unknown",
+      "items": []
+    },
+    "goal_tags": {
+      "status": "unknown",
+      "items": []
+    }
   }
 }
