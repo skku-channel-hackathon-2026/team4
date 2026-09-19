@@ -8,31 +8,27 @@ import {
   type Case,
   type SosRequest,
 } from "@tutorial/shared";
-import {
-  getRecord,
-  insertRecordIfAbsent,
-  listRecords,
-  replaceRecordIfField,
-  setRecord,
-} from "../records.js";
+import { changedRows, getDatabase, resultRows } from "../database.js";
 
 /**
  * SOS 요청 저장·규칙. B가 소유한다.
  *
- * 요청 하나가 `app_records` 한 행이다. 예전처럼 전체 목록을 한 키에 배열로 두면
+ * 요청 하나가 D1 `failfair_sos` 한 행이다. 전체 목록을 한 키에 배열로 두면
  * "읽고 → 고치고 → 통째로 덮어쓰는" 사이에 남의 요청이나 남의 수락이 사라진다.
  * 그래서 새 요청은 빈 자리에만 넣고(`claim`), 응답은 아직 `pending`일 때만
  * 바꾼다(`settle`). 둘 다 DB가 판정하므로 동시에 눌러도 한 쪽만 이긴다.
  */
 export interface SosStore {
-  /** 이 채널의 모든 요청. */
+  /** 이 채널의 모든 요청. 최신순. */
   list(channelId: string): Promise<SosRequest[]>;
   /**
-   * (채널·사례·새내기) 한 자리에 요청 하나. 이미 답을 기다리는 요청이 있으면
-   * 그것을 돌려주고 `created: false`. 거절된 요청 자리는 새 요청이 대체한다.
+   * (채널·사례·새내기)당 대기 중 요청은 하나. 이미 답을 기다리는 요청이 있으면
+   * 그것을 돌려주고 `created: false`. 거절·수락된 요청은 이력으로 남고 새 요청을 다시 넣을 수 있다.
    */
   claim(
     request: SosRequest,
+    /** 화면이 만든 전송 단위 ID. 같은 값이 다시 오면 상태와 무관하게 그 요청을 돌려준다. */
+    requestId: string,
   ): Promise<{ request: SosRequest; created: boolean }>;
   /** 아직 `pending`일 때만 답을 적는다. 남이 먼저 답했으면 undefined. */
   settle(
@@ -42,66 +38,109 @@ export interface SosStore {
   ): Promise<SosRequest | undefined>;
 }
 
-const RECORD_SOS = "failfair:sos";
-
-/** ID 안의 `:`이 키 경계를 흐리지 않도록 조각마다 감싼다. */
-const part = (value: string) => encodeURIComponent(value);
-
-function channelPrefix(channelId: string): string {
-  return `${RECORD_SOS}:${part(channelId)}:`;
-}
-
-/** 한 새내기가 한 사례에 대해 가지는 자리 하나. 중복 방지를 DB 키로 보장한다. */
-function slotKey(request: SosRequest): string {
-  return (
-    channelPrefix(request.channelId) +
-    `${part(request.caseId)}:${part(request.studentManagerId)}`
-  );
-}
-
 function parse(candidate: unknown): SosRequest | undefined {
   const parsed = SosRequestSchema.safeParse(candidate);
   return parsed.success ? parsed.data : undefined;
 }
 
-export const appRecordsSosStore: SosStore = {
-  async list(channelId) {
-    const rows = await listRecords<unknown>(channelPrefix(channelId));
-    return rows.flatMap((row) => {
-      const request = parse(row);
+function parseRows(result: unknown): SosRequest[] {
+  return resultRows<{ body_json: string }>(result).flatMap((row) => {
+    try {
+      const request = parse(JSON.parse(row.body_json));
       return request ? [request] : [];
-    });
+    } catch {
+      return [];
+    }
+  });
+}
+
+/** 이 (채널·사례·새내기) 자리의 최신 요청. 대기 중인 것을 우선한다. */
+async function latestInSlot(
+  request: SosRequest,
+): Promise<SosRequest | undefined> {
+  const result = await getDatabase()
+    .prepare(
+      "SELECT body_json FROM failfair_sos " +
+        "WHERE channel_id = ? AND case_id = ? AND student_manager_id = ? " +
+        "ORDER BY (status = 'pending') DESC, created_at DESC LIMIT 1",
+    )
+    .bind(request.channelId, request.caseId, request.studentManagerId)
+    .all<{ body_json: string }>();
+  return parseRows(result)[0];
+}
+
+/** 이 전송 단위 ID로 이미 저장된 요청. 응답만 잃은 재전송을 새 요청과 구분한다. */
+async function findByRequestId(
+  channelId: string,
+  requestId: string,
+): Promise<SosRequest | undefined> {
+  const result = await getDatabase()
+    .prepare(
+      "SELECT body_json FROM failfair_sos WHERE channel_id = ? AND request_id = ? LIMIT 1",
+    )
+    .bind(channelId, requestId)
+    .all<{ body_json: string }>();
+  return parseRows(result)[0];
+}
+
+export const d1SosStore: SosStore = {
+  async list(channelId) {
+    const result = await getDatabase()
+      .prepare(
+        "SELECT body_json FROM failfair_sos WHERE channel_id = ? ORDER BY created_at DESC, id",
+      )
+      .bind(channelId)
+      .all<{ body_json: string }>();
+    return parseRows(result);
   },
 
-  async claim(request) {
-    const key = slotKey(request);
-    if (await insertRecordIfAbsent(key, request))
-      return { request, created: true };
-    const existing = parse(await getRecord<unknown>(key));
-    // 자리는 있는데 읽지 못했다면(깨진 JSON) 경합이 아니라 손상이다. 그냥 덮어쓴다.
-    if (!existing) {
-      await setRecord(key, request);
-      return { request, created: true };
+  async claim(request, requestId) {
+    const seen = await findByRequestId(request.channelId, requestId);
+    if (seen) return { request: seen, created: false };
+    // 대기 중 요청이 이미 있으면 부분 유니크 인덱스(idx_failfair_sos_pending)에 걸려 0행이 된다.
+    // 그 사이에 그 요청이 답을 받으면 자리가 비므로 한 번 더 시도한다.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const inserted = await getDatabase()
+        .prepare(
+          "INSERT OR IGNORE INTO failfair_sos " +
+            "(id, channel_id, case_id, student_manager_id, senior_manager_id, status, request_id, body_json, created_at, responded_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(
+          request.id,
+          request.channelId,
+          request.caseId,
+          request.studentManagerId,
+          request.seniorManagerId,
+          request.status,
+          requestId,
+          JSON.stringify(request),
+          request.createdAt,
+          request.respondedAt ?? null,
+        )
+        .run();
+      if (changedRows(inserted) === 1) return { request, created: true };
+      // 같은 전송이 동시에 두 번 들어와 다른 쪽이 먼저 들어갔을 수도 있다.
+      const raced = await findByRequestId(request.channelId, requestId);
+      if (raced) return { request: raced, created: false };
+      const existing = await latestInSlot(request);
+      if (existing?.status === "pending")
+        return { request: existing, created: false };
     }
-    // 거절당한 요청 자리에는 다시 부탁할 수 있다. 그 사이 남이 바꿨으면 다시 읽는다.
-    if (existing.status === "declined") {
-      if (await replaceRecordIfField(key, "status", "declined", request))
-        return { request, created: true };
-      const reread = parse(await getRecord<unknown>(key));
-      return { request: reread ?? existing, created: false };
-    }
-    return { request: existing, created: false };
+    const latest = await latestInSlot(request);
+    return { request: latest ?? request, created: false };
   },
 
   async settle(request, status, now) {
     const updated: SosRequest = { ...request, status, respondedAt: now };
-    const changed = await replaceRecordIfField(
-      slotKey(request),
-      "status",
-      "pending",
-      updated,
-    );
-    return changed ? updated : undefined;
+    const result = await getDatabase()
+      .prepare(
+        "UPDATE failfair_sos SET status = ?, responded_at = ?, body_json = ? " +
+          "WHERE id = ? AND status = 'pending'",
+      )
+      .bind(status, now, JSON.stringify(updated), request.id)
+      .run();
+    return changedRows(result) === 1 ? updated : undefined;
   },
 };
 
@@ -131,9 +170,12 @@ const notFound = () =>
   );
 
 export class SosService {
-  constructor(private readonly store: SosStore = appRecordsSosStore) {}
+  constructor(private readonly store: SosStore = d1SosStore) {}
 
-  /** 같은 새내기가 같은 사례에 보낸 대기 중 요청이 있으면 그것을 돌려준다 (중복 방지). */
+  /**
+   * 같은 새내기가 같은 사례에 보낸 대기 중 요청이 있으면 그것을 돌려준다 (중복 방지).
+   * 같은 requestId가 다시 오면 상태와 무관하게 그때 저장한 요청을 돌려준다 (응답만 잃은 재전송).
+   */
   async request(
     input: {
       item: Case;
@@ -143,6 +185,7 @@ export class SosService {
       chatTitle: string;
       studentManagerId: string;
       message: string;
+      requestId: string;
     },
     now = Date.now(),
   ): Promise<{ request: SosRequest; created: boolean }> {
@@ -153,20 +196,23 @@ export class SosService {
         { type: FAILFAIR_ERRORS.notFoundOrForbidden },
       );
     }
-    return this.store.claim({
-      id: newSosId(now),
-      caseId: input.item.id,
-      caseTitle: input.item.title,
-      channelId: input.channelId,
-      chatId: input.chatId,
-      chatType: input.chatType,
-      chatTitle: input.chatTitle,
-      studentManagerId: input.studentManagerId,
-      seniorManagerId: input.item.authorManagerId ?? "",
-      message: input.message,
-      status: "pending",
-      createdAt: now,
-    });
+    return this.store.claim(
+      {
+        id: newSosId(now),
+        caseId: input.item.id,
+        caseTitle: input.item.title,
+        channelId: input.channelId,
+        chatId: input.chatId,
+        chatType: input.chatType,
+        chatTitle: input.chatTitle,
+        studentManagerId: input.studentManagerId,
+        seniorManagerId: input.item.authorManagerId ?? "",
+        message: input.message,
+        status: "pending",
+        createdAt: now,
+      },
+      input.requestId,
+    );
   }
 
   /** 내가 보낸(student) 또는 나에게 온(senior) 요청. 최신순. */
