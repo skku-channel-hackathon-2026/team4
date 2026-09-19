@@ -157,7 +157,7 @@ body {
   width: 100%;
   text-align: left;
   position: relative;
-  padding: 18px 58px 18px 20px;
+  padding: 18px 58px 20px 40px;
   border-radius: var(--ff-radius);
   border: 1px solid var(--ff-line);
   background: var(--ff-paper-2);
