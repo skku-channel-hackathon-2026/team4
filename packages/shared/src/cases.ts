@@ -1124,4 +1124,127 @@ export const DEMO_CASES: Case[] = [
       usageNote: "마지막 줄이 없으면 도움이 관여로 이어지기 쉬웠다",
     },
   },
+  {
+    ...DEMO_BASE,
+    id: "demo-grade-balance-keep-all",
+    category: "grades",
+    title: "다 한다더니 근황부터 로그아웃한 선배",
+    problemType: "academic_activity_balance",
+    situation:
+      "성적을 올리면서 밴드, 술자리, 대외활동과 개인 일정까지 전부 유지하려 했다는 가상 시연 사례다",
+    constraints: ["줄이기로 정한 활동 없음", "실제 공부 시간은 미확인"],
+    urgency: "later",
+    goal: "성적 향상과 모든 활동 유지",
+    actionSteps: [
+      {
+        order: 1,
+        actionTag: "keep_all_activities",
+        description:
+          "활동을 줄이지 않고 시험 기간에도 잡힌 일정을 대부분 그대로 소화했다",
+      },
+    ],
+    outcome: {
+      shortTerm: "가상 설정의 학기 평점은 2.8이었다",
+      followUp:
+        "이후 한 학기 휴학했고, 요즘 소식은 잘 전해지지 않는다는 후일담이 있다",
+      unresolved:
+        "활동 유지가 성적이나 휴학의 직접 원인이었는지는 확인되지 않았다",
+    },
+    receipt: {
+      firstAction: "일단 전부 할 수 있다고 선언했다",
+      wasted: "겹친 일정을 정리할 여유를 따로 확보하지 못했다",
+      turningPoint: "구체적인 휴학 결정 계기는 미확인이다",
+      cost: "학기 평점 2.8, 일부 과제 지연, 주변 사람들과의 연락 감소",
+      status: "ongoing",
+    },
+    conditions: [
+      "발표용 가상 사례이며 실제 경험이나 통계가 아니다",
+      "동일한 선택이 같은 성적이나 휴학으로 이어진다는 뜻이 아니다",
+    ],
+    tags: ["가상시연", "성적활동균형", "모든활동유지", "2.8"],
+  },
+  {
+    ...DEMO_BASE,
+    id: "demo-grade-balance-planner",
+    category: "grades",
+    title: "플래너 색 조합만 확실해진 선배",
+    problemType: "academic_activity_balance",
+    situation:
+      "활동은 하나도 줄이지 않은 채 촘촘한 계획표로 성적을 올리려 했다는 가상 시연 사례다",
+    constraints: ["활동량 유지", "계획 수정 시간은 미확인"],
+    urgency: "later",
+    goal: "활동을 유지하며 계획표로 성적 올리기",
+    actionSteps: [
+      {
+        order: 1,
+        actionTag: "plan_without_reducing_load",
+        description:
+          "모든 활동을 넣은 계획표를 만들고 일정이 밀릴 때마다 다시 꾸몄다",
+      },
+    ],
+    outcome: {
+      shortTerm: "가상 설정에서 학기 평점은 3.1에서 3.2로 올랐다",
+      followUp:
+        "성적은 0.1 올랐지만 민트색과 라벤더색을 좋아한다는 사실은 확실히 알아냈다고 전해진다",
+      unresolved:
+        "0.1 상승이 계획표 때문인지 과목 구성 차이 때문인지는 알 수 없다",
+    },
+    receipt: {
+      firstAction: "모든 일정을 한 장의 계획표에 넣었다",
+      wasted:
+        "계획 작성과 수정에 적지 않은 시간을 썼지만 정확한 양은 미확인이다",
+      turningPoint: "계획과 실제 공부 시간의 차이가 벌어졌다",
+      cost: "잦은 계획 수정, 미달성 스트레스, 계획보다 부족했던 공부 시간",
+      status: "partial",
+    },
+    conditions: [
+      "발표용 가상 사례이며 실제 경험이나 통계가 아니다",
+      "계획표 자체가 효과 없다는 일반화는 하지 않는다",
+    ],
+    tags: ["가상시연", "성적활동균형", "플래너", "3.1", "3.2"],
+  },
+  {
+    ...DEMO_BASE,
+    id: "demo-grade-balance-study-first",
+    category: "grades",
+    title: "4.1은 받았는데 연애 퀘스트는 잠긴 선배",
+    problemType: "academic_activity_balance",
+    situation:
+      "성적을 우선해 모임과 대외활동을 대부분 줄이고 밴드 공연 한 번만 참여했다는 가상 시연 사례다",
+    constraints: ["여러 모임 불참", "대외활동 한 학기 중단"],
+    urgency: "later",
+    goal: "성적을 우선하면서 감당할 활동만 남기기",
+    actionSteps: [
+      {
+        order: 1,
+        actionTag: "reduce_activities_prioritize_study",
+        description: "모임과 대외활동을 대부분 줄이고 밴드 공연 한 번만 남겼다",
+      },
+      {
+        order: 2,
+        actionTag: "change_study_method",
+        description: "수업 직후 복습과 주말 기출 풀이를 시도했다",
+      },
+    ],
+    outcome: {
+      shortTerm: "가상 설정의 학기 평점은 4.1이었다",
+      followUp:
+        "성적은 잘 나왔지만 새로운 연애 관계는 끝내 생기지 않았다고 전해진다",
+      unresolved:
+        "활동 축소만으로 4.1을 받았는지, 성적 관리와 연애 결과가 관련 있는지는 확인되지 않았다",
+    },
+    receipt: {
+      firstAction: "성적을 우선하고 참여 활동을 줄였다",
+      wasted: "별도의 낭비 시간은 가상 대본에 제시되지 않았다",
+      turningPoint: "활동 범위를 줄여 복습과 문제 풀이 시간을 확보했다",
+      cost: "여러 모임 불참, 대외활동 중단, 친구들과 만나는 횟수 감소",
+      status: "partial",
+    },
+    conditions: [
+      "발표용 가상 사례이며 실제 경험이나 통계가 아니다",
+      "같은 활동 축소나 4.1 성적을 보장하지 않는다",
+      "연애 여부를 성적 관리의 결과로 해석하지 않는다",
+    ],
+    tags: ["가상시연", "성적활동균형", "활동축소", "4.1", "연애"],
+  },
 ];

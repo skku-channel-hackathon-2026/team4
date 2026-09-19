@@ -149,6 +149,21 @@ export const ACTION_TAGS: Record<
   ],
   grades: [
     {
+      tag: "keep_all_activities",
+      label: "활동 전부 유지",
+      keywords: ["다 챙", "전부 유지", "모두 유지", "그대로 다"],
+    },
+    {
+      tag: "plan_without_reducing_load",
+      label: "활동 유지 + 계획표",
+      keywords: ["플래너", "계획표", "일정표"],
+    },
+    {
+      tag: "reduce_activities_prioritize_study",
+      label: "학업 우선 + 활동 축소",
+      keywords: ["활동 줄", "활동 축소", "학업 우선", "공부 우선"],
+    },
+    {
       tag: "change_study_method",
       label: "공부 방식 변경",
       keywords: ["공부법", "방식", "스터디", "계획 세우", "복습"],
@@ -760,6 +775,11 @@ export const PROBLEM_TYPES: Record<
     },
   ],
   grades: [
+    {
+      type: "academic_activity_balance",
+      label: "학업·활동 병행",
+      keywords: ["다 챙", "병행", "동아리", "대외활동", "술자리", "연애"],
+    },
     {
       type: "low_exam_score",
       label: "시험 성적 부진",
