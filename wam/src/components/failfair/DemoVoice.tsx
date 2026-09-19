@@ -184,7 +184,7 @@ export default function DemoVoice({ messages }: { messages: Message[] }) {
     []
   )
 
-  function toggle() {
+  async function toggle() {
     if (enabled) {
       enabledRef.current = false
       setEnabled(false)
@@ -196,13 +196,18 @@ export default function DemoVoice({ messages }: { messages: Message[] }) {
     seen.current = messages.length
     enabledRef.current = true
     setEnabled(true)
-    setStatus('음성 시연 대기 중')
+    setStatus('음성 연결 확인 중')
     // Unlock this media element during a user gesture (silent PCM WAV).
     if (audio.current) {
       audio.current.src =
         'data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='
-      void audio.current.play().catch(() => undefined)
+      await audio.current.play().catch(() => undefined)
     }
+    // Turning voice on should give immediate feedback instead of silently waiting
+    // for the next chat turn.
+    const latest = messages[messages.length - 1]
+    if (latest) queue.current.push(latest)
+    void drain()
   }
 
   return (
@@ -220,7 +225,7 @@ export default function DemoVoice({ messages }: { messages: Message[] }) {
       />
       <button
         type="button"
-        onClick={toggle}
+        onClick={() => void toggle()}
         disabled={!enabled && !token.trim()}
       >
         {enabled ? '음성 끄기' : '음성 켜기'}
