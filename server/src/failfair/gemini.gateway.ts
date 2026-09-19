@@ -105,6 +105,9 @@ const labels = {
   goal: "원하는 결과",
 };
 
+/** 허용하는 GEMINI_MODEL 형식. 생성자와 createModelGateway가 같은 규칙을 쓴다. */
+export const GEMINI_MODEL_PATTERN = /^gemini-[a-z0-9.-]+$/;
+
 export class GeminiGateway implements ModelGateway {
   constructor(
     private readonly apiKey: string,
@@ -112,7 +115,7 @@ export class GeminiGateway implements ModelGateway {
     private readonly model = "gemini-3.1-flash-lite",
     private readonly request: typeof fetch = fetch,
   ) {
-    if (!apiKey.trim() || !/^gemini-[a-z0-9.-]+$/.test(model))
+    if (!apiKey.trim() || !GEMINI_MODEL_PATTERN.test(model))
       throw new Error("Invalid Gemini configuration");
   }
   async analyze(input: AnalyzeInput): Promise<AnalyzeOutput> {

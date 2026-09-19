@@ -1,4 +1,4 @@
-import { GeminiGateway } from "./gemini.gateway.js";
+import { GEMINI_MODEL_PATTERN, GeminiGateway } from "./gemini.gateway.js";
 import {
   ACTION_TAGS,
   CATEGORIES,
@@ -285,21 +285,103 @@ export function firstPrompt(category: Category): string {
   );
 }
 
-/** 환경 변수로 실제 모델 게이트웨이를 고른다. 키가 없으면 규칙 기반으로 동작한다. */
+/**
+ * 1차 게이트웨이(외부 모델)가 실패하면 그 턴만 2차(규칙 기반)로 답한다.
+ * 시연 중 외부 모델이 흔들려도 학생이 오류 대신 답을 받게 하는 안전장치다.
+ * 두 경로 모두 서버가 상황을 다시 검증하므로 세션은 손상되지 않는다.
+ */
+export class FallbackGateway implements ModelGateway {
+  constructor(
+    readonly label: string,
+    private readonly primary: ModelGateway,
+    private readonly fallback: ModelGateway,
+    private readonly log: (message: string) => void = (message) =>
+      console.warn(message),
+  ) {}
+
+  async analyze(input: AnalyzeInput): Promise<AnalyzeOutput> {
+    try {
+      return await this.primary.analyze(input);
+    } catch (error) {
+      this.log(
+        `${this.label} analyze failed; answering this turn with the rule-based gateway (${describeError(error)})`,
+      );
+      return this.fallback.analyze(input);
+    }
+  }
+
+  async suggestActions(situation: Situation): Promise<ActionCandidate[]> {
+    try {
+      return await this.primary.suggestActions(situation);
+    } catch (error) {
+      this.log(
+        `${this.label} suggestActions failed; using the rule-based gateway (${describeError(error)})`,
+      );
+      return this.fallback.suggestActions(situation);
+    }
+  }
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
+}
+
+export interface ModelConfig {
+  /** 실제로 기동되는 게이트웨이. 설정이 잘못되면 gemini를 골랐어도 rule이다. */
+  provider: "gemini" | "rule";
+  model?: string;
+  /** 규칙 기반으로 내려앉은 이유. /api/health에 노출되므로 환경 변수 값을 담지 않는다. */
+  warning?: string;
+}
+
+const DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite";
+
+/** 환경 변수만 보고 무엇이 기동될지 설명한다. 값을 echo하지 않는다. */
+export function describeModelConfig(
+  env: Record<string, string | undefined> = process.env,
+): ModelConfig {
+  const provider = env.MODEL_PROVIDER?.trim();
+  if (!provider || provider === "rule") return { provider: "rule" };
+  if (provider !== "gemini")
+    return { provider: "rule", warning: "Unsupported MODEL_PROVIDER" };
+  const key = (env.GEMINI_API_KEY ?? env.MODEL_API_KEY)?.trim();
+  if (!key)
+    return {
+      provider: "rule",
+      warning: "MODEL_PROVIDER=gemini but GEMINI_API_KEY is missing",
+    };
+  const model = env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+  if (!GEMINI_MODEL_PATTERN.test(model))
+    return { provider: "rule", warning: "Invalid GEMINI_MODEL" };
+  return { provider: "gemini", model };
+}
+
+/**
+ * 환경 변수로 게이트웨이를 고른다. 어떤 설정 오류에도 throw하지 않는다.
+ * 부팅 시 throw하면 Worker 전체가 500이 되므로, 잘못된 설정은 경고를 남기고
+ * 규칙 기반으로 기동한다. 실제 기동 결과는 `GET /api/health`의 `model`로 확인한다.
+ */
 export function createModelGateway(
   env: Record<string, string | undefined> = process.env,
+  log: (message: string) => void = (message) => console.warn(message),
 ): ModelGateway {
-  if (env.MODEL_PROVIDER === "gemini") {
-    const key = env.GEMINI_API_KEY ?? env.MODEL_API_KEY;
-    if (!key)
-      throw new Error("GEMINI_API_KEY is required for MODEL_PROVIDER=gemini");
-    return new GeminiGateway(
-      key,
-      new RuleBasedGateway(),
-      env.GEMINI_MODEL ?? "gemini-3.1-flash-lite",
+  const rule = new RuleBasedGateway();
+  const config = describeModelConfig(env);
+  if (config.warning)
+    log(`${config.warning}; starting with the rule-based gateway`);
+  if (config.provider !== "gemini") return rule;
+  const key = (env.GEMINI_API_KEY ?? env.MODEL_API_KEY ?? "").trim();
+  try {
+    return new FallbackGateway(
+      "gemini",
+      new GeminiGateway(key, rule, config.model),
+      rule,
+      log,
     );
+  } catch (error) {
+    log(
+      `Gemini gateway could not be created (${describeError(error)}); starting with the rule-based gateway`,
+    );
+    return rule;
   }
-  if (env.MODEL_PROVIDER && env.MODEL_PROVIDER !== "rule")
-    throw new Error("Unsupported MODEL_PROVIDER");
-  return new RuleBasedGateway();
 }
