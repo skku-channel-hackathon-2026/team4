@@ -107,7 +107,7 @@ export const d1SessionStore: SessionStore = {
     // 같은 SQL 트랜잭션 안에서 저장한다. RETURNING은 트리거의 변경 행 수와 무관하다.
     const updated = await getDatabase()
       .prepare(
-        "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ?, last_response_json = ? " +
+        "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ?, commit_response_json = ? " +
           "WHERE id = ? AND revision = ? AND NOT EXISTS " +
           "(SELECT 1 FROM failfair_requests WHERE session_id = ? AND request_id = ?) RETURNING id",
       )

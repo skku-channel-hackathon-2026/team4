@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Context } from "@channel.io/app-sdk-server";
 import { withDatabase, type AppDatabase } from "../database.js";
-import { createTestDatabase } from "../test-database.js";
+import { createTestDatabase, migrationSql } from "../test-database.js";
 import {
   SessionService,
   d1SessionStore,
@@ -29,6 +29,67 @@ const ctx = (managerId: string): Context =>
 
 const revisionOf = (error: unknown) =>
   (error as { data?: { revision?: number } }).data?.revision;
+
+test("PR27의 0004 적용 이력에서도 0005가 기존 대화와 응답을 보존하고 복구한다", async () => {
+  const migrations = migrationSql();
+  const old = migrations.filter((m) => m.name < "0004");
+  old.push({
+    name: "0004_session_response_trigger.sql",
+    sql: `
+    ALTER TABLE failfair_sessions ADD COLUMN pending_response_json TEXT;
+    CREATE TRIGGER failfair_session_response_commit AFTER UPDATE ON failfair_sessions
+    WHEN NEW.pending_response_json IS NOT NULL AND NEW.last_request_id IS NOT NULL
+      AND NEW.revision = OLD.revision + 1
+    BEGIN
+      INSERT INTO failfair_requests VALUES
+        (NEW.id, NEW.last_request_id, NEW.pending_response_json, NEW.updated_at);
+    END;`,
+  });
+  const db = createTestDatabase(old);
+  await withDatabase({ prepare: (sql) => db.prepare(sql) }, async () => {
+    const service = new SessionService(d1SessionStore);
+    const session = await service.create(ctx("me"), "grades", "첫 질문");
+    // PR27에서 이미 처리된 요청을 남긴다. 오래된 트리거가 남으면 다음 UPDATE가 충돌한다.
+    await db
+      .prepare(
+        "UPDATE failfair_sessions SET revision = 1, last_request_id = 'old', pending_response_json = ? WHERE id = ?",
+      )
+      .bind(JSON.stringify({ response: { old: true } }), session.id)
+      .run();
+    await assert.rejects(
+      () => service.mutate(session, "new", 0, () => ({})),
+      /commit_response_json/,
+    );
+    // 각 migration은 SQLite exec로 적용하는 테스트 헬퍼를 이용한다.
+    // 기존 DB에는 D1처럼 문장 단위로 적용하되 트리거 본문은 한 문장이다.
+    const repair = migrations.find((m) => m.name.startsWith("0005"))!.sql;
+    const triggerAt = repair.indexOf("CREATE TRIGGER");
+    for (const sql of repair
+      .slice(0, triggerAt)
+      .split(";")
+      .filter((s) => s.trim()))
+      await db.prepare(sql).run();
+    await db.prepare(repair.slice(triggerAt)).run();
+    session.revision = 1;
+    const response = await service.mutate(session, "new", 1, (current) => {
+      current.messages.push({ role: "student", content: "복구된 답변", at: 2 });
+      return { ok: true };
+    });
+    assert.deepEqual(response, { ok: true });
+    const stored = await service.load(ctx("me"), session.id);
+    assert.equal(stored.revision, 2);
+    assert.equal(stored.messages.length, 2);
+    assert.deepEqual(await d1SessionStore.findResponse(session.id, "old"), {
+      response: { old: true },
+    });
+    assert.deepEqual(
+      await service.mutate(stored, "new", 1, () => {
+        throw Error("duplicate");
+      }),
+      response,
+    );
+  });
+});
 
 test("sessions are owner-scoped and hide other people's sessions", async () => {
   await inDatabase(async (service) => {

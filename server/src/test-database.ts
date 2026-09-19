@@ -29,9 +29,9 @@ export function migrationSql(): { name: string; sql: string }[] {
     .map((name) => ({ name, sql: readFileSync(join(dir, name), "utf8") }));
 }
 
-export function createTestDatabase(): AppDatabase {
+export function createTestDatabase(migrations = migrationSql()): AppDatabase {
   const sqlite = new DatabaseSync(":memory:");
-  for (const { sql } of migrationSql()) sqlite.exec(sql);
+  for (const { sql } of migrations) sqlite.exec(sql);
   const statement = (sql: string, values: (string | number | null)[]) => ({
     sql,
     values,
