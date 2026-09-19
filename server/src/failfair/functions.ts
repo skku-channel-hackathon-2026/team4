@@ -1,4 +1,5 @@
 import { Injectable, Optional } from "@nestjs/common";
+import { reconcileConfirmedContext } from "./student-context.js";
 import { z } from "zod";
 import {
   CaseSubmissionSchema,
@@ -334,7 +335,13 @@ export class FailfairFunctions {
       input.requestId,
       input.expectedRevision,
       async (current) => {
-        current.situation = normalizeSituation(input.situation);
+        current.situation = normalizeSituation(
+          reconcileConfirmedContext(
+            current.situation,
+            input.situation,
+            current.messages,
+          ),
+        );
         current.confirmedRevision = current.revision + 1;
         const model = await this.models.resolve();
         current.actions = await model.suggestActions(current.situation);
