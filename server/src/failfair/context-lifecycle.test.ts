@@ -11,7 +11,9 @@ import {
 } from "@tutorial/shared";
 import { GeminiGateway } from "./gemini.gateway.js";
 import { RuleBasedGateway } from "./model-gateway.js";
-import { SessionService, type StoredSession } from "./session.service.js";
+import { SessionService } from "./session.service.js";
+import { withDatabase } from "../database.js";
+import { createTestDatabase } from "../test-database.js";
 import { preserveContextMeta } from "./context-metadata.js";
 
 const studentText = "생활비 때문에 알바를 줄일 수 없어. 수업도 빠질 수 없어.";
@@ -88,96 +90,139 @@ test("stored metadata rejects whitespace and ignores client-injected refs", () =
 });
 
 test("analysis → next turn → confirm without metadata → session reload preserves refs", async () => {
-  const records = new Map<string, StoredSession>();
-  const sessions = new SessionService({
-    load: async (id) => {
-      const s = records.get(id);
-      return s ? structuredClone(s) : undefined;
-    },
-    save: async (s) => {
-      records.set(s.id, structuredClone(s));
-    },
+  await withDatabase(createTestDatabase(), async () => {
+    const sessions = new SessionService();
+    const ctx = {
+      caller: { type: "manager", id: "me" },
+      channel: { id: "ch" },
+    } as Context;
+    const session = await sessions.create(ctx, "grades", "무슨 일이 있었나요?");
+    let calls = 0;
+    const gateway = new GeminiGateway(
+      "fake",
+      new RuleBasedGateway(),
+      "gemini-3.1-flash-lite",
+      async () => {
+        calls++;
+        const situation = toLegacySituation(base());
+        const output = {
+          situation,
+          nextQuestion: null,
+          pendingField: null,
+          readyToConfirm: true,
+          evidence:
+            calls === 1
+              ? [
+                  {
+                    path: "constraints.0",
+                    messageIndex: 1,
+                    quote: "생활비 때문에 알바를 줄일 수 없어",
+                  },
+                  {
+                    path: "constraints.1",
+                    messageIndex: 1,
+                    quote: "수업도 빠질 수 없어",
+                  },
+                ]
+              : [],
+        };
+        return new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                finishReason: "STOP",
+                content: { parts: [{ text: JSON.stringify(output) }] },
+              },
+            ],
+          }),
+        );
+      },
+      true,
+    );
+    // Test-only credentials; local SQL and an injected model make no external requests.
+    process.env.APP_ID = "context-lifecycle-test";
+    process.env.APP_SECRET = "test-only-secret";
+    process.env.SIGNING_KEY = "11".repeat(32);
+    const { FailfairFunctions } = await import("./functions.js");
+    const functions = new FailfairFunctions();
+    Object.defineProperties(functions, {
+      sessions: { value: sessions },
+      models: { value: { resolve: async () => gateway } },
+    });
+    await functions.reply(ctx, {
+      sessionId: session.id,
+      requestId: "first",
+      expectedRevision: 0,
+      message: studentText,
+    });
+    await functions.reply(ctx, {
+      sessionId: session.id,
+      requestId: "second",
+      expectedRevision: 1,
+      message: "그대로예요",
+    });
+    const before = await sessions.load(ctx, session.id);
+    assert.equal(before.situation.contextMeta?.fieldEvidence?.length, 2);
+    await functions.confirmSituation(ctx, {
+      sessionId: session.id,
+      requestId: "confirm",
+      expectedRevision: 2,
+      situation: toLegacySituation(before.situation),
+    });
+    const after = await sessions.load(ctx, session.id);
+    assert.equal(after.state, "REVIEWING_ACTIONS");
+    assert.deepEqual(after.situation.contextMeta, before.situation.contextMeta);
+    assert.deepEqual(validateContextMeta(after.situation, after.messages), []);
+    assert.equal(calls, 2);
   });
-  const ctx = {
-    caller: { type: "manager", id: "me" },
-    channel: { id: "ch" },
-  } as Context;
-  const session = await sessions.create(ctx, "grades", "무슨 일이 있었나요?");
-  let calls = 0;
-  const gateway = new GeminiGateway(
-    "fake",
-    new RuleBasedGateway(),
-    "gemini-3.1-flash-lite",
-    async () => {
-      calls++;
-      const situation = toLegacySituation(base());
-      const output = {
-        situation,
-        nextQuestion: null,
-        pendingField: null,
-        readyToConfirm: true,
-        evidence:
-          calls === 1
-            ? [
-                {
-                  path: "constraints.0",
-                  messageIndex: 1,
-                  quote: "생활비 때문에 알바를 줄일 수 없어",
-                },
-                {
-                  path: "constraints.1",
-                  messageIndex: 1,
-                  quote: "수업도 빠질 수 없어",
-                },
-              ]
-            : [],
-      };
-      return new Response(
-        JSON.stringify({
-          candidates: [
-            {
-              finishReason: "STOP",
-              content: { parts: [{ text: JSON.stringify(output) }] },
-            },
-          ],
-        }),
-      );
-    },
-    true,
-  );
-  // Test-only credentials; the injected store/model make no external requests.
-  process.env.APP_ID = "context-lifecycle-test";
-  process.env.APP_SECRET = "test-only-secret";
-  process.env.SIGNING_KEY = "11".repeat(32);
-  const { FailfairFunctions } = await import("./functions.js");
-  const functions = new FailfairFunctions();
-  Object.defineProperties(functions, {
-    sessions: { value: sessions },
-    models: { value: { resolve: async () => gateway } },
+});
+
+test("invalid metadata cannot commit a D1 session or replay response", async () => {
+  await withDatabase(createTestDatabase(), async () => {
+    const sessions = new SessionService();
+    const ctx = {
+      caller: { type: "manager", id: "me" },
+      channel: { id: "ch" },
+    } as Context;
+    const original = await sessions.create(ctx, "grades", "첫 질문");
+    await assert.rejects(
+      sessions.mutate(original, "retryable", 0, (current) => {
+        current.messages.push({ role: "student", content: studentText, at: 1 });
+        current.situation = base();
+        current.situation.contextMeta!.fieldEvidence![0].refs = [
+          { messageIndex: 1, quote: "위조된 인용" },
+        ];
+        return { ok: false };
+      }),
+      /Invalid situation metadata/,
+    );
+    const unchanged = await sessions.load(ctx, original.id);
+    assert.equal(unchanged.revision, 0);
+    assert.equal(unchanged.messages.length, 1);
+    const valid = await sessions.mutate(
+      unchanged,
+      "retryable",
+      0,
+      (current) => {
+        current.messages.push({ role: "student", content: studentText, at: 1 });
+        current.situation = base();
+        for (const field of current.situation.contextMeta!.fieldEvidence!)
+          for (const ref of field.refs) ref.messageIndex = 1;
+        return { ok: true };
+      },
+    );
+    assert.deepEqual(valid, { ok: true });
+    const stored = await sessions.load(ctx, original.id);
+    assert.equal(stored.revision, 1);
+    assert.deepEqual(
+      validateContextMeta(stored.situation, stored.messages),
+      [],
+    );
+    assert.deepEqual(
+      await sessions.mutate(stored, "retryable", 0, () => {
+        throw new Error("must replay");
+      }),
+      valid,
+    );
   });
-  await functions.reply(ctx, {
-    sessionId: session.id,
-    requestId: "first",
-    expectedRevision: 0,
-    message: studentText,
-  });
-  await functions.reply(ctx, {
-    sessionId: session.id,
-    requestId: "second",
-    expectedRevision: 1,
-    message: "그대로예요",
-  });
-  const before = await sessions.load(ctx, session.id);
-  assert.equal(before.situation.contextMeta?.fieldEvidence?.length, 2);
-  await functions.confirmSituation(ctx, {
-    sessionId: session.id,
-    requestId: "confirm",
-    expectedRevision: 2,
-    situation: toLegacySituation(before.situation),
-  });
-  const after = await sessions.load(ctx, session.id);
-  assert.equal(after.state, "REVIEWING_ACTIONS");
-  assert.deepEqual(after.situation.contextMeta, before.situation.contextMeta);
-  assert.deepEqual(validateContextMeta(after.situation, after.messages), []);
-  assert.equal(calls, 2);
 });

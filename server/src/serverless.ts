@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createApplication } from "./application.js";
+import { ensureLegacyImported } from "./failfair/legacy-import.js";
 import { ModelGatewayResolver } from "./failfair/model-config.service.js";
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => void;
@@ -27,6 +28,8 @@ export default async function handler(
     );
     return;
   }
+  // 전용 표가 생기기 전 app_records에 쌓인 데이터를 isolate마다 한 번 표로 옮긴 뒤 요청을 처리한다.
+  await ensureLegacyImported();
   initialization ??= createApplication()
     .then(async (app) => {
       await app.init();

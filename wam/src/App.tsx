@@ -36,9 +36,15 @@ import ModelSettingsPage from './pages/Admin/ModelSettings'
 import SeniorInputPage from './pages/Senior/SeniorInput'
 import SosInboxPage from './pages/Senior/SosInbox'
 import { resolveError, type FailfairError } from './utils/failfairError'
+import DemoVoice from './components/failfair/DemoVoice'
 
 const WAM_WIDTH = 560
 const WAM_MAX_HEIGHT = 720
+const demoParams = new URLSearchParams(window.location.search)
+const SHOW_DEMO_VOICE =
+  import.meta.env.DEV ||
+  demoParams.get('bridge') === 'server' ||
+  demoParams.get('demoVoice') === '1'
 
 /**
  * v2 §3.1 2단계 "현재 정보로 계속하기".
@@ -121,6 +127,9 @@ function App() {
    */
   const sessionRef = useRef<SessionView | null>(null)
 
+  /** 말풍선별 requestId. 같은 말풍선의 재전송은 같은 값을 쓴다. */
+  const requestIds = useRef(new Map<number, string>())
+
   // 마지막으로 실패한 호출. 오류 배너의 "다시 시도"가 그대로 다시 부른다.
   const lastTask = useRef<(() => Promise<void>) | null>(null)
   const lastFallback = useRef('')
@@ -177,8 +186,23 @@ function App() {
         if (resolved.code === 'STALE_SESSION' && current) {
           try {
             const fresh = await api.getSession(current.id)
-            sessionRef.current = fresh
-            setSession(fresh)
+            // 서버에 아직 없는 로컬 학생 말풍선은 최신화 뒤에도 남겨 둔다.
+            // requestIds에 남아 있다는 것은 아직 성공 응답을 받지 못했다는 뜻이다.
+            const pending = current.messages.filter(
+              (message) =>
+                message.role === 'student' &&
+                requestIds.current.has(message.at) &&
+                !fresh.messages.some(
+                  (saved) =>
+                    saved.role === message.role && saved.at === message.at
+                )
+            )
+            const recovered = {
+              ...fresh,
+              messages: [...fresh.messages, ...pending],
+            }
+            sessionRef.current = recovered
+            setSession(recovered)
           } catch {
             // 조회도 실패하면 위 안내만 남긴다.
           }
@@ -251,12 +275,17 @@ function App() {
    * 저장된 응답을 되찾는다.
    */
   const deliver = (text: string, at: number) => {
-    const requestId = newRequestId()
+    // 말풍선(at)당 하나로 고정한다. `resend`로 다시 불려도 같은 값을 써야
+    // 서버가 이미 처리한 요청을 한 번 더 실행하지 않는다.
+    const existing = requestIds.current.get(at)
+    const requestId = existing ?? newRequestId()
+    if (!existing) requestIds.current.set(at, requestId)
     void run(
       async () => {
         const live = sessionRef.current
         if (!live) return
         const replied = await api.reply(live.id, live.revision, text, requestId)
+        requestIds.current.delete(at)
         mark(at, false)
         setSession((current) =>
           current
@@ -309,7 +338,9 @@ function App() {
     if (!sessionRef.current) return
     // 회차마다 고정된 requestId. 재시도해도 같은 값을 써서, 서버가 이미 처리한
     // 회차는 저장된 응답으로 되돌아오고 중복으로 한 번 더 건너뛰지 않는다.
-    const requestIds = Array.from({ length: MAX_SKIPS }, () => newRequestId())
+    const skipRequestIds = Array.from({ length: MAX_SKIPS }, () =>
+      newRequestId()
+    )
     void run(async () => {
       let current = sessionRef.current
       if (!current) return
@@ -317,12 +348,22 @@ function App() {
       // 이미 건너뛴 것이라 그대로 쌓으면 같은 문구가 세 번 이어져 보인다.
       const before = current.messages
       const at = Date.now()
+      const studentMessage = {
+        role: 'student' as const,
+        content: SKIP_TEXT,
+        at,
+      }
+      // 일반 보내기와 같은 순서로 학생 말풍선을 먼저 그려 음성도 먼저 읽는다.
+      setSession({
+        ...current,
+        messages: [...before, studentMessage],
+      })
       for (let attempt = 0; attempt < MAX_SKIPS; attempt += 1) {
         const replied = await api.reply(
           current.id,
           current.revision,
           SKIP_TEXT,
-          requestIds[attempt]
+          skipRequestIds[attempt]
         )
         current = {
           ...current,
@@ -331,7 +372,7 @@ function App() {
           situation: replied.situation,
           messages: [
             ...before,
-            { role: 'student', content: SKIP_TEXT, at },
+            studentMessage,
             {
               role: 'assistant',
               content: replied.assistantMessage,
@@ -339,10 +380,11 @@ function App() {
             },
           ],
         }
-        sessionRef.current = current
-        setSession(current)
         if (current.state !== 'COLLECTING') break
       }
+      // 중간 건너뛰기 질문은 화면과 음성에 쌓지 않고 최종 답변만 반영한다.
+      sessionRef.current = current
+      setSession(current)
       if (current.state !== 'COLLECTING') {
         setScreen({ kind: 'student', step: 'situation' })
       }
@@ -449,12 +491,15 @@ function App() {
 
   const sendSos = (message: string) => {
     if (!session || !caseDetail) return
+    // 전송마다 한 번만 만들고 "다시 시도"에도 그대로 쓴다. 응답만 잃은 요청이 새 SOS로 늘지 않는다.
+    const requestId = newRequestId()
     void run(async () => {
       const { request, notified } = await api.sosRequest(
         session.id,
         caseDetail.id,
         message,
-        data?.chatToken ?? ''
+        data?.chatToken ?? '',
+        requestId
       )
       setSos(request)
       setSosNotified(notified)
@@ -476,6 +521,7 @@ function App() {
     // 죽은 세션을 겨냥한 "다시 시도"가 남지 않도록 같이 비운다.
     lastTask.current = null
     lastOnFail.current = undefined
+    requestIds.current.clear()
     setSession(null)
     setCaseDetail(null)
     setContactable(false)
@@ -859,6 +905,12 @@ function App() {
           className="ff-scroll"
           ref={scrollRef}
         >
+          {SHOW_DEMO_VOICE && session && screen.kind === 'student' && (
+            <DemoVoice
+              key={session.id}
+              messages={session.messages}
+            />
+          )}
           {error && (
             <ErrorNotice
               error={error}

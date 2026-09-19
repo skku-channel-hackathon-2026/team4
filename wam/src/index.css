@@ -18,7 +18,16 @@ body {
 }
 
 :root {
-  font-family: Inter, sans-serif;
+  /*
+   * 본문 서체. 명조를 먼저 두되, Google Fonts를 못 받아오는 환경(Desk 임베드,
+   * 오프라인)을 위해 맥(AppleMyungjo)·윈도우(Batang)의 시스템 명조를 다음에,
+   * 그다음에 원래 산세리프 체인을 둔다. 전부 실패해도 글자는 읽힌다.
+   */
+  --ff-font:
+    'Gowun Batang', AppleMyungjo, Batang, 'Nanum Myeongjo', Inter,
+    'Noto Sans KR', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  font-family: var(--ff-font);
 }
 
 /* ===========================================================================
@@ -75,6 +84,15 @@ body {
   --color-text-neutral-lighter: var(--ff-text-soft) !important;
   --color-text-critical: #c8442a !important;
   --color-text-warning: #b6791d !important;
+
+  /*
+   * 디자인 시스템이 읽는 서체 토큰. Bezier의 Text 컴포넌트는 자기 font-family를
+   * 요소에 직접 걸기 때문에, 부모에 서체를 줘도 상속되지 않는다. 여기서 토큰을
+   * 바꿔야 버튼·배지·입력창까지 한 번에 따라온다. 로케일에 따라 -kr 또는 -jp가
+   * 선택되므로 둘 다 지정한다.
+   */
+  --typography-font-family-sans-kr: var(--ff-font) !important;
+  --typography-font-family-sans-jp: var(--ff-font) !important;
 }
 
 /* 다크는 index.html이 적어 준 data-appearance 하나만 본다. 호스트(채널톡 데스크)가

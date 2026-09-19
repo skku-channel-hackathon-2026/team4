@@ -11,6 +11,7 @@ export default defineConfig({
   server: {
     // 개발용 bridge의 server 모드(?bridge=server)가 App Function 호출을 로컬 Worker로 넘긴다.
     proxy: {
+      '/api/tts': { target: 'http://127.0.0.1:8787', changeOrigin: true },
       '/functions': { target: 'http://127.0.0.1:8787', changeOrigin: true },
     },
   },

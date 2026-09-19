@@ -55,6 +55,7 @@ await writeFile(
         { handle: "filesystem" },
         { src: "^/functions(?:/.*)?$", dest: "/server" },
         { src: "^/api/health$", dest: "/server" },
+        { src: "^/api/tts$", dest: "/server" },
       ],
     },
     null,

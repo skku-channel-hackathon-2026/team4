@@ -5,8 +5,8 @@
 > **성균관대 해커톤 팀 개발 안내**: [시작하기·배포·DB 마이그레이션](HACKATHON.ko.md) · [Desk 검증 기록](docs/desk-qa.md)
 > 팀 레포 Admin·채널톡 앱 owner 초대를 수락하고, 공통 성균관대 해커톤 채널에 참여하세요.
 > 앱 초대 확인·수락: [개발자 앱 목록](https://channel.works/-/developers/apps) — 초대 이메일과 같은 계정으로 로그인합니다.
-> 팀 레포는 **PR 머지 → main CI 성공 → 웹훅 → Cloudflare Workers 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
-> 원격 DB 마이그레이션·앱 비밀 키 변경·익스텐션 등록 갱신은 운영진에게 별도로 요청합니다. Vercel 또는 Cloudflare 계정 초대는 필요하지 않습니다.
+> 팀 레포는 **PR 머지 → main CI 성공 → 원격 D1 마이그레이션 → Cloudflare Workers 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
+> DB 마이그레이션은 자동 적용됩니다. 앱 비밀 키 변경·익스텐션 등록 갱신은 운영진에게 요청합니다. Vercel 또는 Cloudflare 계정 초대는 필요하지 않습니다.
 
 [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md)
 
@@ -99,18 +99,44 @@ D1을 사용하는 기능은 Wrangler로 실행하세요. Node 서버만 실행�
 
 ## 배포와 확인
 
-팀 레포에서 작업 브랜치의 PR을 `main`에 머지하면 main CI 성공 후 자동 배포됩니다.
+팀 레포에서 작업 브랜치의 PR을 `main`에 머지하면 main CI 성공 후 미적용 SQL을 원격 D1에 적용하고 앱을 배포합니다. SQL 적용 실패 시 앱 배포도 중단됩니다.
 PR 검사만 성공하거나 main CI가 실패한 경우에는 배포되지 않습니다.
 서버는 Cloudflare Workers Free, DB는 팀별 D1입니다. 별도 Vercel 배포는 사용하지 않습니다.
 CI 성공과 배포 완료는 별개이며, 배포 로그·커밋 SHA는 운영진이 확인할 수 있습니다.
 `/api/health`는 서버 상태, `/api/ready`는 실제 D1 연결(`SELECT 1`)을 확인합니다.
 이 상태 검사만으로 기능의 데이터 저장·조회까지 검증되는 것은 아닙니다.
 
-DB 변경은 `cloudflare/migrations/`의 새 SQL 파일로 관리하고, **해당 스키마를 쓰는 코드의
-머지 전에** 운영진에게 원격 적용을 요청하세요. 코드 배포가 SQL을 자동 적용하지 않습니다.
+DB 변경은 `cloudflare/migrations/`의 새 SQL 파일로 코드와 함께 PR에 포함하세요.
+main CI 성공 후 해당 커밋의 미적용 SQL이 팀 전용 D1에 자동 적용됩니다. 운영진의 수동 적용은 필요하지 않습니다.
+적용한 파일은 수정·삭제하지 말고 새 보정 SQL을 추가하세요. 마이그레이션 이후 앱 배포가 실패해도 DB 변경은 유지되므로,
+기존 앱과 호환되는 스키마 변경을 사용하세요. 코드 revert는 DB를 되돌리지 않습니다.
 Function 스키마·익스텐션·커맨드 메타데이터 변경 후에는 앱 등록 갱신도 요청합니다.
 
 ## Project map
+
+### 발표용 음성
+
+개발 환경이나 WAM URL의 `?demoVoice=1`에서 학생 대화의 `음성 시연`을 펼쳐
+시연 토큰을 입력하고 켜면, 이후 입력과 답변을
+학생·선배 목소리로 순서대로 읽습니다. `중지`, `마지막 대사 다시 듣기`를 지원합니다.
+기본값은 OFF이며, 실패하면 텍스트 대화는 계속됩니다. 새 세션에서는 다시 켜 주세요.
+
+Wrangler의 `.dev.vars`(배포 시 Worker secrets)에 아래 값을 설정합니다.
+Node 서버에서는 `server/.env`를 사용합니다. 키나 토큰은 Git에 넣지 않습니다.
+
+- `ELEVENLABS_API_KEY`: Text to Speech 권한이 있는 API 키
+- `ELEVENLABS_STUDENT_VOICE_ID`: `cgSgspJ2msm6clMCkdW9` (`Jessica`)로 설정됨
+- `ELEVENLABS_ASSISTANT_VOICE_ID`: `pNInz6obpgDQGcFmaJgB` (`Adam`)로 설정됨
+- `ELEVENLABS_MODEL_ID`: `eleven_flash_v2_5`로 설정됨
+- `DEMO_TTS_TOKEN`: 별도로 생성한 충분히 긴 무작위 발표자 토큰. 화면에는 이 값만 입력합니다.
+
+API 키는 서버에만 보관하고 `/api/tts`는 발표자 토큰을 검사합니다. 토큰은 브라우저
+메모리에만 유지합니다. 학생 입력과 답변 텍스트가 ElevenLabs로 전달되므로 발표용
+가상 대화를 사용하세요. 시연이 끝나면 서버 토큰을 제거해 호출을 비활성화합니다.
+Vite는 `/api/tts`를 로컬 Worker(8787)로 전달합니다.
+MP3 스트리밍을 지원하는 브라우저에서는 수신 중 재생하고, 미지원 시 완성 음원을
+재생합니다. 첫 소리까지 모델·네트워크 지연이 있으며, 실제 Desk의 재생 허용과 음질은
+발표 기기에서 확인해야 합니다. 사례 카드는 자동 낭독 대상에 포함되지 않습니다.
 
 ```text
 server/

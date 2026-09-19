@@ -119,7 +119,9 @@ export interface FailfairApi {
     caseId: string,
     message: string,
     /** `open`이 내려 준 서명된 채팅방 표식. 서버가 알림 대상을 이 값으로만 정한다. */
-    chatTarget: string
+    chatTarget: string,
+    /** 전송 단위 ID. 재시도에도 같은 값을 넘기면 응답만 잃은 요청이 새 SOS로 늘지 않는다. */
+    requestId?: string
   ): Promise<{ request: SosRequest; notified: boolean }>
   sosList(role: 'student' | 'senior'): Promise<{ requests: SosRequest[] }>
   sosRespond(
@@ -185,8 +187,20 @@ export function createFailfairApi(appId: string): FailfairApi {
     listCases: (status) => call(appId, F.listCases, status ? { status } : {}),
     reviewCase: (caseId, status) =>
       call(appId, F.reviewCase, { caseId, status }),
-    sosRequest: (sessionId, caseId, message, chatTarget) =>
-      call(appId, F.sosRequest, { sessionId, caseId, message, chatTarget }),
+    sosRequest: (
+      sessionId,
+      caseId,
+      message,
+      chatTarget,
+      requestId = newRequestId()
+    ) =>
+      call(appId, F.sosRequest, {
+        sessionId,
+        caseId,
+        message,
+        chatTarget,
+        requestId,
+      }),
     sosList: (role) => call(appId, F.sosList, { role }),
     sosRespond: (sosId, status) => call(appId, F.sosRespond, { sosId, status }),
     getModel: () => call(appId, F.getModel, {}),
