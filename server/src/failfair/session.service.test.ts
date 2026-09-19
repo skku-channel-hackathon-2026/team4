@@ -13,10 +13,13 @@ import {
  * 저장소는 진짜 SQL로 돌린다. 여기서 확인하려는 것이 "두 창이 같은 버전으로 동시에 저장해도
  * 한 쪽만 이긴다"이므로, Map 대역으로는 정작 지켜야 할 것이 검사되지 않는다.
  */
-const inDatabase = <T>(callback: (service: SessionService) => Promise<T>) =>
-  withDatabase(createTestDatabase(), () =>
+const inDatabase = <T>(callback: (service: SessionService) => Promise<T>) => {
+  const database = createTestDatabase();
+  // 운영 HTTP DB와 같이 prepare만 제공한다.
+  return withDatabase({ prepare: (sql) => database.prepare(sql) }, () =>
     callback(new SessionService(d1SessionStore)),
   );
+};
 
 const ctx = (managerId: string): Context =>
   ({
@@ -139,19 +142,18 @@ test("두 창이 같은 버전으로 동시에 저장하면 한 쪽만 이기고
 
 test("응답 기록이 실패하면 세션 변경도 남지 않아, 재시도가 같은 메시지를 두 번 넣지 않는다", async () => {
   const real = createTestDatabase();
-  let breakNextBatch = true;
-  // 첫 commit에서 두 번째 문장(응답 기록)을 깨뜨린다. 트랜잭션이면 첫 문장(세션 UPDATE)도 되돌아가야 한다.
+  // 운영 HTTP 어댑터처럼 batch가 없고, 응답 INSERT만 실패하는 DB.
+  await real
+    .prepare(
+      `CREATE TRIGGER reject_test_response
+    BEFORE INSERT ON failfair_requests
+    BEGIN SELECT RAISE(ABORT, 'response write failed'); END`,
+    )
+    .run();
   const flaky: AppDatabase = {
     prepare: (sql) => real.prepare(sql),
-    batch: (statements) => {
-      if (breakNextBatch) {
-        breakNextBatch = false;
-        return real.batch([
-          statements[0]!,
-          real.prepare("INSERT INTO no_such_table VALUES (1)"),
-        ]);
-      }
-      return real.batch(statements);
+    batch: async () => {
+      throw new Error("batch is unsupported");
     },
   };
   await withDatabase(flaky, async () => {
@@ -163,11 +165,12 @@ test("응답 기록이 실패하면 세션 변경도 남지 않아, 재시도가
     };
     await assert.rejects(
       () => service.mutate(session, "req-1", 0, push),
-      /no_such_table/,
+      /response write failed/,
     );
     const afterFailure = await service.load(ctx("me"), session.id);
     assert.equal(afterFailure.revision, 0, "세션 변경이 남지 않는다");
     assert.equal(afterFailure.messages.length, 1);
+    await real.prepare("DROP TRIGGER reject_test_response").run();
 
     // 같은 requestId·같은 expectedRevision으로 재시도하면 정상 처리되고 메시지는 한 번만 들어간다.
     assert.deepEqual(await service.mutate(afterFailure, "req-1", 0, push), {

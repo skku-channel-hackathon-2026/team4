@@ -10,8 +10,8 @@ export interface AppDatabase {
   prepare(sql: string): AppStatement & {
     bind(...values: (string | number | null)[]): AppStatement;
   };
-  /** 여러 문장을 한 트랜잭션으로 순서대로 실행한다. 하나라도 실패하면 전부 되돌린다 (D1 batch). */
-  batch(statements: AppStatement[]): Promise<unknown[]>;
+  /** Workers D1에서만 제공한다. 운영 HTTP 어댑터에는 없으므로 필수 경로에서 사용하지 않는다. */
+  batch?(statements: AppStatement[]): Promise<unknown[]>;
 }
 const databaseContext = new AsyncLocalStorage<AppDatabase>();
 export function withDatabase<T>(database: AppDatabase, callback: () => T): T {

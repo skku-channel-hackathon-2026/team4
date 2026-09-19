@@ -15,7 +15,7 @@ import {
   type SessionView,
   type Situation,
 } from "@tutorial/shared";
-import { changedRows, getDatabase } from "../database.js";
+import { getDatabase } from "../database.js";
 
 export type PendingField =
   "deadline" | "progress" | "consideredActions" | "goal";
@@ -103,42 +103,28 @@ export const d1SessionStore: SessionStore = {
   },
 
   async commit(session, expectedRevision, requestId, response, now) {
-    const db = getDatabase();
-    // 두 문장이 한 트랜잭션이다. 응답 기록은 "방금 그 UPDATE가 내 것이었을 때"만 들어간다:
-    // revision이 새 값이고 last_request_id가 내 requestId일 때. 다른 창이 같은 revision을
-    // 먼저 차지했으면 UPDATE는 0행이고 last_request_id는 그쪽 것이라 INSERT도 0행이다.
-    const results = await db.batch([
-      db
-        .prepare(
-          "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ? " +
-            "WHERE id = ? AND revision = ?",
-        )
-        .bind(
-          session.state,
-          session.revision,
-          JSON.stringify(session),
-          now,
-          requestId,
-          session.id,
-          expectedRevision,
-        ),
-      db
-        .prepare(
-          "INSERT OR IGNORE INTO failfair_requests (session_id, request_id, response_json, created_at) " +
-            "SELECT ?, ?, ?, ? FROM failfair_sessions WHERE id = ? AND revision = ? AND last_request_id = ?",
-        )
-        // undefined 응답도 유효한 JSON으로 남도록 한 겹 감싸 저장한다.
-        .bind(
-          session.id,
-          requestId,
-          JSON.stringify({ response }),
-          now,
-          session.id,
-          session.revision,
-          requestId,
-        ),
-    ]);
-    return changedRows(results[0]) === 1;
+    // 운영 HTTP DB는 batch를 지원하지 않는다. 응답 기록은 UPDATE 트리거로
+    // 같은 SQL 트랜잭션 안에서 저장한다. RETURNING은 트리거의 변경 행 수와 무관하다.
+    const updated = await getDatabase()
+      .prepare(
+        "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ?, last_response_json = ? " +
+          "WHERE id = ? AND revision = ? AND NOT EXISTS " +
+          "(SELECT 1 FROM failfair_requests WHERE session_id = ? AND request_id = ?) RETURNING id",
+      )
+      .bind(
+        session.state,
+        session.revision,
+        JSON.stringify(session),
+        now,
+        requestId,
+        JSON.stringify({ response }),
+        session.id,
+        expectedRevision,
+        session.id,
+        requestId,
+      )
+      .first<{ id: string }>();
+    return updated !== null;
   },
 
   async findResponse(sessionId, requestId) {
