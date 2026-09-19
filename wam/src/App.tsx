@@ -449,12 +449,15 @@ function App() {
 
   const sendSos = (message: string) => {
     if (!session || !caseDetail) return
+    // 전송마다 한 번만 만들고 "다시 시도"에도 그대로 쓴다. 응답만 잃은 요청이 새 SOS로 늘지 않는다.
+    const requestId = newRequestId()
     void run(async () => {
       const { request, notified } = await api.sosRequest(
         session.id,
         caseDetail.id,
         message,
-        data?.chatToken ?? ''
+        data?.chatToken ?? '',
+        requestId
       )
       setSos(request)
       setSosNotified(notified)

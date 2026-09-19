@@ -27,6 +27,8 @@ export interface SosStore {
    */
   claim(
     request: SosRequest,
+    /** 화면이 만든 전송 단위 ID. 같은 값이 다시 오면 상태와 무관하게 그 요청을 돌려준다. */
+    requestId: string,
   ): Promise<{ request: SosRequest; created: boolean }>;
   /** 아직 `pending`일 때만 답을 적는다. 남이 먼저 답했으면 undefined. */
   settle(
@@ -67,6 +69,20 @@ async function latestInSlot(
   return parseRows(result)[0];
 }
 
+/** 이 전송 단위 ID로 이미 저장된 요청. 응답만 잃은 재전송을 새 요청과 구분한다. */
+async function findByRequestId(
+  channelId: string,
+  requestId: string,
+): Promise<SosRequest | undefined> {
+  const result = await getDatabase()
+    .prepare(
+      "SELECT body_json FROM failfair_sos WHERE channel_id = ? AND request_id = ? LIMIT 1",
+    )
+    .bind(channelId, requestId)
+    .all<{ body_json: string }>();
+  return parseRows(result)[0];
+}
+
 export const d1SosStore: SosStore = {
   async list(channelId) {
     const result = await getDatabase()
@@ -78,15 +94,17 @@ export const d1SosStore: SosStore = {
     return parseRows(result);
   },
 
-  async claim(request) {
+  async claim(request, requestId) {
+    const seen = await findByRequestId(request.channelId, requestId);
+    if (seen) return { request: seen, created: false };
     // 대기 중 요청이 이미 있으면 부분 유니크 인덱스(idx_failfair_sos_pending)에 걸려 0행이 된다.
     // 그 사이에 그 요청이 답을 받으면 자리가 비므로 한 번 더 시도한다.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const inserted = await getDatabase()
         .prepare(
           "INSERT OR IGNORE INTO failfair_sos " +
-            "(id, channel_id, case_id, student_manager_id, senior_manager_id, status, body_json, created_at, responded_at) " +
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(id, channel_id, case_id, student_manager_id, senior_manager_id, status, request_id, body_json, created_at, responded_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(
           request.id,
@@ -95,12 +113,16 @@ export const d1SosStore: SosStore = {
           request.studentManagerId,
           request.seniorManagerId,
           request.status,
+          requestId,
           JSON.stringify(request),
           request.createdAt,
           request.respondedAt ?? null,
         )
         .run();
       if (changedRows(inserted) === 1) return { request, created: true };
+      // 같은 전송이 동시에 두 번 들어와 다른 쪽이 먼저 들어갔을 수도 있다.
+      const raced = await findByRequestId(request.channelId, requestId);
+      if (raced) return { request: raced, created: false };
       const existing = await latestInSlot(request);
       if (existing?.status === "pending")
         return { request: existing, created: false };
@@ -150,7 +172,10 @@ const notFound = () =>
 export class SosService {
   constructor(private readonly store: SosStore = d1SosStore) {}
 
-  /** 같은 새내기가 같은 사례에 보낸 대기 중 요청이 있으면 그것을 돌려준다 (중복 방지). */
+  /**
+   * 같은 새내기가 같은 사례에 보낸 대기 중 요청이 있으면 그것을 돌려준다 (중복 방지).
+   * 같은 requestId가 다시 오면 상태와 무관하게 그때 저장한 요청을 돌려준다 (응답만 잃은 재전송).
+   */
   async request(
     input: {
       item: Case;
@@ -160,6 +185,7 @@ export class SosService {
       chatTitle: string;
       studentManagerId: string;
       message: string;
+      requestId: string;
     },
     now = Date.now(),
   ): Promise<{ request: SosRequest; created: boolean }> {
@@ -170,20 +196,23 @@ export class SosService {
         { type: FAILFAIR_ERRORS.notFoundOrForbidden },
       );
     }
-    return this.store.claim({
-      id: newSosId(now),
-      caseId: input.item.id,
-      caseTitle: input.item.title,
-      channelId: input.channelId,
-      chatId: input.chatId,
-      chatType: input.chatType,
-      chatTitle: input.chatTitle,
-      studentManagerId: input.studentManagerId,
-      seniorManagerId: input.item.authorManagerId ?? "",
-      message: input.message,
-      status: "pending",
-      createdAt: now,
-    });
+    return this.store.claim(
+      {
+        id: newSosId(now),
+        caseId: input.item.id,
+        caseTitle: input.item.title,
+        channelId: input.channelId,
+        chatId: input.chatId,
+        chatType: input.chatType,
+        chatTitle: input.chatTitle,
+        studentManagerId: input.studentManagerId,
+        seniorManagerId: input.item.authorManagerId ?? "",
+        message: input.message,
+        status: "pending",
+        createdAt: now,
+      },
+      input.requestId,
+    );
   }
 
   /** 내가 보낸(student) 또는 나에게 온(senior) 요청. 최신순. */

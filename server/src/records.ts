@@ -1,4 +1,4 @@
-import { getDatabase } from "./database.js";
+import { getDatabase, resultRows } from "./database.js";
 
 /**
  * 기존 `app_records` 테이블을 key-value JSON 저장소로 쓴다.
@@ -27,4 +27,28 @@ export async function setRecord(id: string, value: unknown): Promise<void> {
     )
     .bind(id, JSON.stringify(value))
     .run();
+}
+
+/**
+ * 접두사로 시작하는 모든 행. 옛 저장 형식을 새 표로 옮길 때만 쓴다.
+ * `prefix`는 앱이 만든 값만 넘긴다 (LIKE 와일드카드를 이스케이프하지 않는다).
+ */
+export async function listRecords<T>(
+  prefix: string,
+): Promise<{ id: string; value: T }[]> {
+  const result = await getDatabase()
+    .prepare(
+      "SELECT id, value_json FROM app_records WHERE id LIKE ? ORDER BY id",
+    )
+    .bind(`${prefix}%`)
+    .all<{ id: string; value_json: string }>();
+  return resultRows<{ id: string; value_json: string }>(result).flatMap(
+    (row) => {
+      try {
+        return [{ id: row.id, value: JSON.parse(row.value_json) as T }];
+      } catch {
+        return [];
+      }
+    },
+  );
 }

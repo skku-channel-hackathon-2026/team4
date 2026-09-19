@@ -37,6 +37,7 @@ CREATE TABLE failfair_sessions (
   category TEXT NOT NULL,
   state TEXT NOT NULL,
   revision INTEGER NOT NULL DEFAULT 0,
+  last_request_id TEXT,                         -- 이 revision을 만든 요청. 응답 기록이 같은 트랜잭션에서 이 값을 확인한다
   body_json TEXT NOT NULL CHECK (json_valid(body_json)),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -45,6 +46,7 @@ CREATE INDEX idx_failfair_sessions_owner
   ON failfair_sessions (channel_id, owner_id, updated_at);
 
 -- 변경 요청의 멱등성. 같은 requestId 재전송은 여기 저장된 응답을 그대로 돌려준다.
+-- 세션 UPDATE와 같은 batch(트랜잭션)에서만 쓰므로, 둘 중 하나만 남는 일이 없다.
 CREATE TABLE failfair_requests (
   session_id TEXT NOT NULL,
   request_id TEXT NOT NULL,
@@ -74,10 +76,13 @@ CREATE TABLE failfair_sos (
   student_manager_id TEXT NOT NULL,
   senior_manager_id TEXT NOT NULL,
   status TEXT NOT NULL,                         -- pending | accepted | declined
+  request_id TEXT,                              -- 화면이 만든 전송 단위 ID. 응답만 잃은 재전송을 새 요청과 구분한다
   body_json TEXT NOT NULL CHECK (json_valid(body_json)),
   created_at INTEGER NOT NULL,
   responded_at INTEGER
 );
+CREATE UNIQUE INDEX idx_failfair_sos_request
+  ON failfair_sos (channel_id, request_id);
 CREATE UNIQUE INDEX idx_failfair_sos_pending
   ON failfair_sos (channel_id, case_id, student_manager_id)
   WHERE status = 'pending';

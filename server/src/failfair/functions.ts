@@ -496,6 +496,7 @@ export class FailfairFunctions {
       chatTitle: target.chatTitle ?? "",
       studentManagerId: managerId,
       message: input.message,
+      requestId: input.requestId,
     });
     const notified = created
       ? await this.notifier.notify({

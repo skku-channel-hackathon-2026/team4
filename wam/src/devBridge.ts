@@ -95,6 +95,8 @@ export async function installDevBridge(): Promise<void> {
 
   const cases: Case[] = [...DEMO_CASES]
   const sosRequests: SosRequest[] = []
+  /** 전송 단위 requestId → 그때 만든 요청. 서버의 failfair_sos.request_id와 같은 역할. */
+  const sosByRequestId = new Map<string, SosRequest>()
   let devModel: {
     provider: 'gemini' | 'rule'
     source: 'env' | 'record' | 'none'
@@ -382,6 +384,12 @@ export async function installDevBridge(): Promise<void> {
           throw Object.assign(new Error('dev bridge: chat target required'), {
             type: FAILFAIR_ERRORS.chatTargetRequired,
           })
+        // 서버처럼 같은 requestId 재전송은 그때 만든 요청을 상태와 무관하게 돌려준다.
+        const retransmitted = sosByRequestId.get(String(params.requestId))
+        if (retransmitted) {
+          result = { request: retransmitted, notified: false }
+          break
+        }
         // 서버처럼 (사례·새내기)당 대기 요청 하나만 둔다.
         const pending = sosRequests.find(
           (request) =>
@@ -404,6 +412,7 @@ export async function installDevBridge(): Promise<void> {
           createdAt: Date.now(),
         }
         if (!pending) sosRequests.push(request)
+        sosByRequestId.set(String(params.requestId), request)
         result = { request, notified: !pending }
         break
       }

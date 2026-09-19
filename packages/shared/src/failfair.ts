@@ -587,6 +587,8 @@ export const SOS_STATUS_LABELS: Record<SosStatus, string> = {
 export const SosRequestInputSchema = z.object({
   sessionId: z.string().min(1),
   caseId: z.string().min(1),
+  /** 전송 단위 ID. 응답만 잃고 재시도해도 같은 값을 보내면 서버가 같은 요청을 돌려준다 (새 SOS가 늘지 않는다). */
+  requestId: z.string().min(1),
   message: z.string().trim().min(1).max(500),
   /** WAM이 받은 `chatToken`을 그대로 돌려준다. 서버가 서명·채널·본인·만료를 확인한다. */
   chatTarget: z.string().default(""),

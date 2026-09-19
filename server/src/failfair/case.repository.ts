@@ -12,6 +12,11 @@ import { getRecord, setRecord } from "../records.js";
  * 사례 저장소 계약. B가 소유한다.
  * 저장은 D1 `failfair_cases` 한 행 = 사례 하나. 번들의 가상 사례(DEMO_CASES)는 DB에 넣지 않고
  * 읽을 때 합치며, 같은 id의 행이 DB에 있으면 그쪽이 이긴다 (가상 사례를 숨길 때 그렇게 된다).
+ *
+ * 저장할 때 옛 `failfair:cases` 배열에도 같은 사례를 남긴다 (거울). 코드를 되돌리면 옛 코드는
+ * 그 배열만 읽으므로, 거울이 없으면 숨긴 사례가 다시 보이고 새로 등록한 사례가 사라진 것처럼 보인다.
+ * 표가 정답이고 거울은 롤백 대비용이다. 배열 갱신은 읽고-쓰기라 동시 저장 때 한 건이 빠질 수 있지만,
+ * 다음 배포에서 표를 기준으로 다시 맞춘다 (legacy-import.ts).
  */
 export interface CaseRepository {
   listApproved(category?: Category): Promise<Case[]>;
@@ -20,9 +25,8 @@ export interface CaseRepository {
   save(item: Case): Promise<Case>;
 }
 
-/** 테이블 이전 전에 app_records 한 키에 배열로 있던 사례. 한 번만 옮기고 표식을 남긴다. */
-const RECORD_LEGACY_CASES = "failfair:cases";
-const RECORD_LEGACY_MIGRATED = "failfair:cases:migrated";
+/** 옛 코드가 읽는 사례 배열. 롤백 대비 거울로 계속 갱신한다. */
+export const RECORD_LEGACY_CASES = "failfair:cases";
 
 function parseCase(candidate: unknown): Case[] {
   const parsed = CaseSchema.safeParse(candidate);
@@ -46,8 +50,14 @@ const UPSERT =
   "source_type = excluded.source_type, author_manager_id = excluded.author_manager_id, " +
   "allow_contact = excluded.allow_contact, version = excluded.version, " +
   "body_json = excluded.body_json, updated_at = excluded.updated_at";
-/** 이미 있으면 건드리지 않는다. 옛 저장소에서 옮길 때 새 저장소의 변경을 덮지 않으려고. */
-const INSERT_IF_ABSENT = `INSERT OR IGNORE INTO failfair_cases ${COLUMNS}`;
+/** 옛 저장소에서 옮길 때: 표에 더 새 버전이 있으면 건드리지 않는다. */
+const UPSERT_IF_NEWER =
+  `INSERT INTO failfair_cases ${COLUMNS} ` +
+  "ON CONFLICT(id) DO UPDATE SET category = excluded.category, status = excluded.status, " +
+  "source_type = excluded.source_type, author_manager_id = excluded.author_manager_id, " +
+  "allow_contact = excluded.allow_contact, version = excluded.version, " +
+  "body_json = excluded.body_json, updated_at = excluded.updated_at " +
+  "WHERE excluded.version > failfair_cases.version";
 
 function bindCase(sql: string, item: Case, now: number) {
   return getDatabase()
@@ -66,35 +76,23 @@ function bindCase(sql: string, item: Case, now: number) {
     );
 }
 
-export class D1CaseRepository implements CaseRepository {
-  private backfill: Promise<void> | undefined;
+export function bindCaseUpsertIfNewer(item: Case, now: number) {
+  return bindCase(UPSERT_IF_NEWER, item, now);
+}
 
+/** 옛 배열에 같은 id가 있으면 바꾸고 없으면 붙인다. 표를 쓴 뒤에 부른다. */
+async function mirrorToLegacy(item: Case): Promise<void> {
+  const stored = await getRecord<unknown>(RECORD_LEGACY_CASES);
+  const others = (Array.isArray(stored) ? stored : []).filter(
+    (candidate) => (candidate as { id?: string })?.id !== item.id,
+  );
+  await setRecord(RECORD_LEGACY_CASES, [...others, item]);
+}
+
+export class D1CaseRepository implements CaseRepository {
   constructor(private readonly demo: Case[] = DEMO_CASES) {}
 
-  /**
-   * 예전 `failfair:cases` 배열을 표로 한 번 옮긴다. 시연용으로 Desk에서 등록해 둔 실제 사례가
-   * 배포 뒤 사라지지 않게 하려는 것. INSERT OR IGNORE라 여러 isolate가 겹쳐 돌아도 안전하다.
-   * 실패하면 다음 호출이 다시 시도한다.
-   */
-  private backfillOnce(): Promise<void> {
-    this.backfill ??= this.runBackfill().catch((error: unknown) => {
-      this.backfill = undefined;
-      throw error;
-    });
-    return this.backfill;
-  }
-
-  private async runBackfill(): Promise<void> {
-    if (await getRecord<unknown>(RECORD_LEGACY_MIGRATED)) return;
-    const legacy = await getRecord<unknown>(RECORD_LEGACY_CASES);
-    const items = Array.isArray(legacy) ? legacy.flatMap(parseCase) : [];
-    const now = Date.now();
-    for (const item of items) await bindCase(INSERT_IF_ABSENT, item, now).run();
-    await setRecord(RECORD_LEGACY_MIGRATED, { at: now, count: items.length });
-  }
-
   private async select(where: string, values: string[]): Promise<Case[]> {
-    await this.backfillOnce();
     const result = await getDatabase()
       .prepare(
         `SELECT body_json FROM failfair_cases ${where} ORDER BY created_at, id`,
@@ -106,7 +104,6 @@ export class D1CaseRepository implements CaseRepository {
 
   /** DB에 같은 id가 있는 가상 사례는 번들 쪽을 숨긴다. */
   private async overriddenIds(): Promise<Set<string>> {
-    await this.backfillOnce();
     const result = await getDatabase()
       .prepare("SELECT id FROM failfair_cases")
       .all<{ id: string }>();
@@ -154,8 +151,8 @@ export class D1CaseRepository implements CaseRepository {
   }
 
   async save(item: Case, now = Date.now()): Promise<Case> {
-    await this.backfillOnce();
     await bindCase(UPSERT, item, now).run();
+    await mirrorToLegacy(item);
     return item;
   }
 }

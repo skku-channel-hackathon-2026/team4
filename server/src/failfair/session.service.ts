@@ -41,19 +41,22 @@ export interface StoredSession {
 export interface SessionStore {
   load(id: string): Promise<StoredSession | undefined>;
   insert(session: StoredSession): Promise<void>;
-  /** 저장된 revision이 expected일 때만 통째로 바꾼다. 남이 먼저 바꿨으면 false. */
-  update(session: StoredSession, expectedRevision: number): Promise<boolean>;
+  /**
+   * 저장된 revision이 expected일 때만 세션을 통째로 바꾸고, 같은 트랜잭션에서 이 요청의 응답을
+   * 남긴다. 남이 먼저 바꿨으면 아무것도 쓰지 않고 false. 둘 중 하나만 남는 일은 없다.
+   */
+  commit(
+    session: StoredSession,
+    expectedRevision: number,
+    requestId: string,
+    response: unknown,
+    now: number,
+  ): Promise<boolean>;
   /** 같은 requestId로 이미 처리한 응답. 없으면 undefined. */
   findResponse(
     sessionId: string,
     requestId: string,
   ): Promise<{ response: unknown } | undefined>;
-  saveResponse(
-    sessionId: string,
-    requestId: string,
-    response: unknown,
-    now: number,
-  ): Promise<void>;
 }
 
 function parseSession(body: string, id: string): StoredSession | undefined {
@@ -95,22 +98,43 @@ export const d1SessionStore: SessionStore = {
       .run();
   },
 
-  async update(session, expectedRevision) {
-    const result = await getDatabase()
-      .prepare(
-        "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ? " +
-          "WHERE id = ? AND revision = ?",
-      )
-      .bind(
-        session.state,
-        session.revision,
-        JSON.stringify(session),
-        session.updatedAt,
-        session.id,
-        expectedRevision,
-      )
-      .run();
-    return changedRows(result) === 1;
+  async commit(session, expectedRevision, requestId, response, now) {
+    const db = getDatabase();
+    // 두 문장이 한 트랜잭션이다. 응답 기록은 "방금 그 UPDATE가 내 것이었을 때"만 들어간다:
+    // revision이 새 값이고 last_request_id가 내 requestId일 때. 다른 창이 같은 revision을
+    // 먼저 차지했으면 UPDATE는 0행이고 last_request_id는 그쪽 것이라 INSERT도 0행이다.
+    const results = await db.batch([
+      db
+        .prepare(
+          "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ? " +
+            "WHERE id = ? AND revision = ?",
+        )
+        .bind(
+          session.state,
+          session.revision,
+          JSON.stringify(session),
+          now,
+          requestId,
+          session.id,
+          expectedRevision,
+        ),
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO failfair_requests (session_id, request_id, response_json, created_at) " +
+            "SELECT ?, ?, ?, ? FROM failfair_sessions WHERE id = ? AND revision = ? AND last_request_id = ?",
+        )
+        // undefined 응답도 유효한 JSON으로 남도록 한 겹 감싸 저장한다.
+        .bind(
+          session.id,
+          requestId,
+          JSON.stringify({ response }),
+          now,
+          session.id,
+          session.revision,
+          requestId,
+        ),
+    ]);
+    return changedRows(results[0]) === 1;
   },
 
   async findResponse(sessionId, requestId) {
@@ -122,7 +146,6 @@ export const d1SessionStore: SessionStore = {
       .first<{ response_json: string }>();
     if (!row) return undefined;
     try {
-      // undefined 응답도 유효한 JSON으로 남도록 한 겹 감싸 저장한다.
       return {
         response: (JSON.parse(row.response_json) as { response: unknown })
           .response,
@@ -130,16 +153,6 @@ export const d1SessionStore: SessionStore = {
     } catch {
       return undefined;
     }
-  },
-
-  async saveResponse(sessionId, requestId, response, now) {
-    await getDatabase()
-      .prepare(
-        "INSERT OR IGNORE INTO failfair_requests (session_id, request_id, response_json, created_at) " +
-          "VALUES (?, ?, ?, ?)",
-      )
-      .bind(sessionId, requestId, JSON.stringify({ response }), now)
-      .run();
   },
 };
 
@@ -213,6 +226,7 @@ export class SessionService {
    * 변경 요청 공통 처리. 같은 requestId는 저장된 응답을 그대로 돌려주고,
    * expectedRevision이 다르면 STALE_SESSION으로 거절한다.
    * 저장도 revision 조건부라, 검사와 저장 사이에 다른 창이 먼저 썼으면 그때도 거절한다.
+   * 세션 변경과 응답 기록은 한 트랜잭션이라, 실패한 요청의 재시도가 handler를 두 번 적용하지 않는다.
    */
   async mutate<T>(
     session: StoredSession,
@@ -228,11 +242,13 @@ export class SessionService {
     const from = session.revision;
     session.revision += 1;
     session.updatedAt = now;
-    if (!(await this.store.update(session, from))) {
+    if (!(await this.store.commit(session, from, requestId, response, now))) {
+      // 같은 requestId가 동시에 두 번 들어와 다른 쪽이 먼저 저장했으면 그 응답이 정답이다.
+      const raced = await this.store.findResponse(session.id, requestId);
+      if (raced) return raced.response as T;
       const latest = await this.store.load(session.id);
       throw stale(latest?.revision ?? from);
     }
-    await this.store.saveResponse(session.id, requestId, response, now);
     return response;
   }
 }

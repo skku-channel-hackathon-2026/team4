@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Context } from "@channel.io/app-sdk-server";
-import { withDatabase } from "../database.js";
+import { withDatabase, type AppDatabase } from "../database.js";
 import { createTestDatabase } from "../test-database.js";
 import {
   SessionService,
@@ -134,6 +134,76 @@ test("두 창이 같은 버전으로 동시에 저장하면 한 쪽만 이기고
     const winner = (won[0] as PromiseFulfilledResult<{ from: string }>).value
       .from;
     assert.equal(stored.situation.goal, winner, "이긴 쪽의 변경만 남는다");
+  });
+});
+
+test("응답 기록이 실패하면 세션 변경도 남지 않아, 재시도가 같은 메시지를 두 번 넣지 않는다", async () => {
+  const real = createTestDatabase();
+  let breakNextBatch = true;
+  // 첫 commit에서 두 번째 문장(응답 기록)을 깨뜨린다. 트랜잭션이면 첫 문장(세션 UPDATE)도 되돌아가야 한다.
+  const flaky: AppDatabase = {
+    prepare: (sql) => real.prepare(sql),
+    batch: (statements) => {
+      if (breakNextBatch) {
+        breakNextBatch = false;
+        return real.batch([
+          statements[0]!,
+          real.prepare("INSERT INTO no_such_table VALUES (1)"),
+        ]);
+      }
+      return real.batch(statements);
+    },
+  };
+  await withDatabase(flaky, async () => {
+    const service = new SessionService(d1SessionStore);
+    const session = await service.create(ctx("me"), "grades", "hi");
+    const push = (current: typeof session) => {
+      current.messages.push({ role: "student", content: "한 번만", at: 2 });
+      return { ok: true };
+    };
+    await assert.rejects(
+      () => service.mutate(session, "req-1", 0, push),
+      /no_such_table/,
+    );
+    const afterFailure = await service.load(ctx("me"), session.id);
+    assert.equal(afterFailure.revision, 0, "세션 변경이 남지 않는다");
+    assert.equal(afterFailure.messages.length, 1);
+
+    // 같은 requestId·같은 expectedRevision으로 재시도하면 정상 처리되고 메시지는 한 번만 들어간다.
+    assert.deepEqual(await service.mutate(afterFailure, "req-1", 0, push), {
+      ok: true,
+    });
+    const stored = await service.load(ctx("me"), session.id);
+    assert.equal(stored.revision, 1);
+    assert.equal(stored.messages.length, 2);
+    assert.deepEqual(await service.mutate(stored, "req-1", 1, push), {
+      ok: true,
+    });
+    assert.equal((await service.load(ctx("me"), session.id)).revision, 1);
+  });
+});
+
+test("같은 requestId가 동시에 두 번 들어오면 한 번만 적용되고 둘 다 같은 응답을 받는다", async () => {
+  await inDatabase(async (service) => {
+    const created = await service.create(ctx("me"), "club", "hi");
+    const [windowA, windowB] = await Promise.all([
+      service.load(ctx("me"), created.id),
+      service.load(ctx("me"), created.id),
+    ]);
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 1));
+    const push = async (current: typeof created) => {
+      await tick();
+      current.messages.push({ role: "student", content: "두 번 눌림", at: 2 });
+      return { echo: current.messages.length };
+    };
+    const [a, b] = await Promise.all([
+      service.mutate(windowA, "req-dup", 0, push),
+      service.mutate(windowB, "req-dup", 0, push),
+    ]);
+    assert.deepEqual(a, b, "진 쪽도 이긴 쪽의 저장된 응답을 받는다");
+    const stored = await service.load(ctx("me"), created.id);
+    assert.equal(stored.revision, 1);
+    assert.equal(stored.messages.length, 2, "메시지는 한 번만 들어간다");
   });
 });
 

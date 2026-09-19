@@ -33,6 +33,8 @@ export function createTestDatabase(): AppDatabase {
   const sqlite = new DatabaseSync(":memory:");
   for (const { sql } of migrationSql()) sqlite.exec(sql);
   const statement = (sql: string, values: (string | number | null)[]) => ({
+    sql,
+    values,
     async run() {
       const result = sqlite.prepare(sql).run(...values);
       return { meta: { changes: Number(result.changes) } };
@@ -44,12 +46,29 @@ export function createTestDatabase(): AppDatabase {
       return { results: sqlite.prepare(sql).all(...values) as T[] };
     },
   });
+  type TestStatement = ReturnType<typeof statement>;
   return {
     prepare(sql: string) {
       return {
         ...statement(sql, []),
         bind: (...values: (string | number | null)[]) => statement(sql, values),
       };
+    },
+    /** D1 batch처럼 한 트랜잭션. 중간에 실패하면 앞선 문장도 되돌린다. */
+    async batch(statements) {
+      sqlite.exec("BEGIN");
+      try {
+        const results: unknown[] = [];
+        for (const item of statements as TestStatement[]) {
+          const result = sqlite.prepare(item.sql).run(...item.values);
+          results.push({ meta: { changes: Number(result.changes) } });
+        }
+        sqlite.exec("COMMIT");
+        return results;
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
     },
   };
 }

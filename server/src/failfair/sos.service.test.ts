@@ -31,10 +31,13 @@ const realCase = (overrides: Partial<Case> = {}): Case => ({
   ...overrides,
 });
 
+let sent = 0;
 const ask = (
   overrides: Partial<Parameters<SosService["request"]>[0]> = {},
 ) => ({
   item: realCase(),
+  // 전송마다 새 ID. 재전송을 흉내 낼 때만 같은 값을 넘긴다.
+  requestId: `send-${(sent += 1)}`,
   channelId: "c1",
   chatId: "g1",
   chatType: "group",
@@ -158,6 +161,45 @@ test("목록은 역할별로 갈리고, 답은 받은 선배만 할 수 있으�
     assert.equal(replay.request.status, "accepted");
     assert.match(sosRequestedText(request), /연락 되는 선배/);
     assert.ok(!sosRequestedText(request).includes("student-1"));
+  });
+});
+
+test("응답만 잃고 같은 requestId로 재전송하면, 선배가 그 사이 수락했어도 새 SOS가 생기지 않는다", async () => {
+  await inDatabase(async (service) => {
+    const first = await service.request(ask({ requestId: "send-x" }), 1000);
+    await service.respond("c1", "senior-1", first.request.id, "accepted", 2000);
+
+    const retransmit = await service.request(
+      ask({ requestId: "send-x", message: "같은 내용" }),
+      3000,
+    );
+    assert.equal(retransmit.created, false, "알림도 다시 나가지 않는다");
+    assert.equal(retransmit.request.id, first.request.id);
+    assert.equal(retransmit.request.status, "accepted");
+    assert.equal(
+      (await service.listFor("c1", "student-1", "student")).length,
+      1,
+    );
+
+    // 새 전송 ID면 새 상담이다. 수락된 이력은 남고 대기 중 요청이 하나 더 생긴다.
+    const fresh = await service.request(ask({ requestId: "send-y" }), 4000);
+    assert.equal(fresh.created, true);
+    assert.notEqual(fresh.request.id, first.request.id);
+    assert.equal(
+      (await service.listFor("c1", "student-1", "student")).length,
+      2,
+    );
+  });
+});
+
+test("같은 전송이 동시에 두 번 들어와도 요청은 하나이고 둘 다 같은 요청을 받는다", async () => {
+  await inDatabase(async (service) => {
+    const [a, b] = await Promise.all([
+      service.request(ask({ requestId: "send-same" }), 1000),
+      service.request(ask({ requestId: "send-same" }), 1000),
+    ]);
+    assert.equal([a, b].filter((result) => result.created).length, 1);
+    assert.equal(a.request.id, b.request.id);
   });
 });
 
