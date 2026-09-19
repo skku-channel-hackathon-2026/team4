@@ -6,10 +6,13 @@ Node.js 24와 pnpm 11.24.0을 사용합니다. `pnpm-lock.yaml`을 함께 커밋
 
 ## 초대 수락 후 확인할 것
 
+앱 초대는 [개발자 앱 목록](https://channel.works/-/developers/apps)에서 확인하고 수락합니다.
+초대 이메일과 같은 계정으로 로그인하세요. GitHub 레포 초대와 채널 멤버 초대는 별개입니다.
+
 | 권한                  | 할 수 있는 일                            |
 | --------------------- | ---------------------------------------- |
 | 팀 GitHub 레포 Admin  | 코드·SQL 수정, 브랜치·PR 생성, main push |
-| 채널톡 앱 개발 권한   | 앱 설정·익스텐션·권한 확인 및 개발       |
+| 채널톡 앱 owner 권한   | 앱 설정·익스텐션·권한 확인 및 개발       |
 | 공통 해커톤 채널 멤버 | 설치된 앱 실행과 팀 테스트               |
 
 Cloudflare 계정 권한 없이도 코드 배포가 가능합니다. 원격 DB 마이그레이션, 서버 비밀 키 변경,
@@ -22,7 +25,7 @@ team4 리소스:
 - 팀별 배포·앱 연결 현황: [TEAM.md](TEAM.md)
 
 이 팀의 Worker·DB·앱을 운영진이 개별로 연결합니다. 다른 팀의 주소·비밀 키를 사용하지 마세요.
-공통 스타터의 Desk 검증 기록은 team1 파일럿 근거이며 이 팀의 설치 완료를 의미하지 않습니다.
+팀 앱은 공통 성균관대 해커톤 채널에 설치되어 있습니다. `docs/desk-qa.md`는 초기 team1 파일럿 기록이며, 현재 팀별 연결은 `TEAM.md`를 확인하세요.
 
 ## 코드 구조
 
@@ -61,7 +64,7 @@ corepack pnpm dev:cloudflare
 출력된 localhost 주소에서 `/api/health`, `/api/ready`를 확인합니다.
 화면을 수정한 뒤에는 `corepack pnpm build:cloudflare`로 WAM 정적 파일도 다시 빌드합니다.
 UI만 빠르게 개발할 때는 `corepack pnpm dev:wam`을 사용할 수 있지만,
-단독 브라우저에는 Desk의 WAM 컨텍스트가 없으므로 실제 연결 검증은 전용 채널에서 해야 합니다.
+단독 브라우저에는 Desk의 WAM 컨텍스트가 없으므로 실제 연결 검증은 공통 해커톤 채널에서 해야 합니다.
 
 기존 `dev:server`는 Node 서버만 실행하며 D1을 제공하지 않습니다. DB 사용 기능은 Wrangler에서
 실행하세요. 별도 개발 앱을 로컬 HTTPS 터널과 연결할 때는 운영진과 Endpoint를 조율합니다.
@@ -163,7 +166,7 @@ README에 넣지 마세요. `.dev.vars`와 `server/.env`도 커밋하지 않습�
 
 ## Desk에서 앱 확인하기
 
-전용 채널의 그룹 채팅에서 `/tutorial`을 입력하고 커맨드를 선택한 뒤 실행합니다.
+공통 성균관대 해커톤 채널의 공개 `앱_개발_검증` 그룹에서 `/tutorial`을 입력하고 커맨드를 선택한 뒤 실행합니다.
 튜토리얼 WAM에는 `Send as a manager`, `Send as a bot` 버튼이 있으며 각각 실제 메시지를
 보냅니다. 운영진이 지정한 테스트 그룹에서만 사용하세요. DM·고객 상담방은 이 예제의 지원 대상이 아닙니다.
 
@@ -189,7 +192,7 @@ WebSocket, Nest microservices, class-validator, class-transformer는 현재 Work
 
 ## 인계 체크리스트
 
-- GitHub Admin·앱 소유자 권한·전용 채널 초대를 모두 수락합니다.
+- GitHub Admin·앱 소유자 권한·공통 채널 초대를 모두 수락합니다.
 - 로컬 Worker·D1 실행과 SQL 적용을 확인합니다.
 - 작은 화면 변경을 main에 반영하고 실제 Desk에서 배포 결과를 확인합니다.
 - DB 변경 요청, 익스텐션 등록 갱신, 비밀 키 변경은 운영진과 진행합니다.

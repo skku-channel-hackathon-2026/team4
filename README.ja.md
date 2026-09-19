@@ -1,3 +1,5 @@
+> **SKKU hackathon:** Use [README](README.md) and the [hackathon guide](HACKATHON.ko.md) for Cloudflare Workers/D1, invitations and CI-triggered deployment. The Node server instructions below are upstream tutorial references, not the configured team deployment procedure.
+
 # Channel App チュートリアル — TypeScript
 
 [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md)

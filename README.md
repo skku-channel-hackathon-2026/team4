@@ -1,10 +1,12 @@
-# Channel App tutorial — TypeScript
+# SKKU 2026 team4 — Channel App
 
 **SKKU 2026 team4** · [이 팀의 리소스와 준비 상태](TEAM.md)
 
 > **성균관대 해커톤 팀 개발 안내**: [시작하기·배포·DB 마이그레이션](HACKATHON.ko.md) · [Desk 검증 기록](docs/desk-qa.md)
-> GitHub Write, 앱 개발 권한, 전용 채널 초대를 수락한 뒤 위 가이드부터 확인하세요.
-> `main` push는 코드 배포 대상이며, 원격 DB 마이그레이션과 익스텐션 등록 갱신은 운영진에게 별도로 요청합니다.
+> 팀 레포 Admin·채널톡 앱 owner 초대를 수락하고, 공통 성균관대 해커톤 채널에 참여하세요.
+> 앱 초대 확인·수락: [개발자 앱 목록](https://channel.works/-/developers/apps) — 초대 이메일과 같은 계정으로 로그인합니다.
+> 팀 레포는 **PR 머지 → main CI 성공 → 웹훅 → Cloudflare Workers 자동 배포** 순서입니다. 빌드·실행 대기 시간이 필요합니다.
+> 원격 DB 마이그레이션·앱 비밀 키 변경·익스텐션 등록 갱신은 운영진에게 별도로 요청합니다. Vercel 또는 Cloudflare 계정 초대는 필요하지 않습니다.
 
 [English](README.md) | [한국어](README.ko.md) | [日本語](README.ja.md)
 
@@ -36,7 +38,7 @@ design guidance:
 ## What this app demonstrates
 
 - `@channel.io/app-sdk-server` and `@channel.io/app-sdk-wam` `0.17.2`
-- a `command` extension discovered and registered automatically
+- a `command` extension registered by operators for the deployed Workers app
 - typed app functions with Zod input/output schemas
 - SDK-managed app/channel token caching and refresh
 - HMAC request verification with the SDK signature guard
@@ -67,86 +69,52 @@ This tutorial follows the public SDK runtime contract:
 - a narrow ingress compatibility mapping from bare `PUT /functions` calls to the same verified
   `v1` handler when the caller does not carry a system version
 
-This tutorial pins `0.17.2` for reproducible builds and enables SDK auto-registration in the app
-process. Its WAM uses only public SDK hooks and Bezier APIs.
+This app pins `0.17.2` for reproducible builds. Workers disables startup auto-registration;
+operators update registration after function schemas or extension metadata change.
+Its WAM uses only public SDK hooks and Bezier APIs.
 
-## Prerequisites
+## 해커톤 개발 시작
 
-- Node.js 24 or newer
-- pnpm 11.24.0 through Corepack
-- a private Channel App with an App ID, App Secret, and Signing Key
-
-If you do not have an app yet, start with the SDK's
-[first-app quickstart](https://github.com/channel-io/app-sdk/blob/main/docs/guides/en/quickstart.md). It covers private-app creation, server-side credentials, minimum permissions, endpoint roots, and test-channel installation.
-
-Enable these permissions in the app's **Authentication and permissions** settings:
-
-- Channel: `writeGroupMessage`
-- Manager: `writeGroupMessageAsManager`
-
-## Clone
+Node.js 24와 pnpm 11.24.0을 사용합니다. 이 레포를 clone하세요.
 
 ```sh
-git clone https://github.com/channel-io/app-tutorial-ts.git
-cd app-tutorial-ts
+git clone https://github.com/skku-channel-hackathon-2026/team4.git
+cd team4
 corepack enable
-```
-
-## Configure
-
-```sh
-cp server/.env.example server/.env
-```
-
-Fill in `APP_ID`, `APP_SECRET`, and the hex-encoded `SIGNING_KEY`. Keep secrets out of Git.
-
-## Prepare HTTPS endpoints
-
-Start or reserve an HTTPS tunnel to local port `3000`, then save these roots in the developer portal
-before starting the auto-registering server:
-
-- Function Endpoint: `https://YOUR_HOST/functions`
-- WAM Endpoint: `https://YOUR_HOST/resource/wam`
-
-Do not append `/v1` or `/tutorial`. If credentials, permissions, or endpoints change after the
-server starts, restart the server so auto-registration runs again.
-
-The SDK route itself remains versioned. The tutorial also accepts bare `PUT /functions` and maps it
-to `/functions/v1` because current command execution can call the configured Function Endpoint
-without a system-version suffix. Both paths reuse the same SDK handler and signature verification.
-
-## Install and build
-
-```sh
 corepack pnpm install --frozen-lockfile
-corepack pnpm build
-corepack pnpm test
-corepack pnpm typecheck
+corepack pnpm build:cloudflare
 ```
 
-## Run
+[개발 가이드](HACKATHON.ko.md)의 가짜 로컬 환경값으로 `.dev.vars`를 만든 후 실행합니다.
 
 ```sh
-corepack pnpm start
+corepack pnpm db:migrate:local
+corepack pnpm dev:cloudflare
 ```
 
-The defaults expose:
+`.dev.vars`는 Git에 포함하지 않습니다. 로컬 DB와 원격 DB는 별개입니다.
+D1을 사용하는 기능은 Wrangler로 실행하세요. Node 서버만 실행하면 D1이 제공되지 않습니다.
+실제 Desk/API 연동에 필요한 키와 테스트 설정은 운영진에게 요청하세요.
+이미 연결된 팀 앱의 Endpoint를 개인 로컬 주소로 변경하지 마세요.
 
-| Setting           | URL                                           |
-| ----------------- | --------------------------------------------- |
-| Function Endpoint | `https://YOUR_HOST/functions`                 |
-| WAM Endpoint      | `https://YOUR_HOST/resource/wam`              |
-| Local WAM         | `http://localhost:3000/resource/wam/tutorial` |
+## 배포와 확인
 
-After the server reports successful startup and extension registration, install or refresh the
-private app in the test channel and run `/tutorial` in a group chat. Verify both sender buttons and
-a permission-failure case. Do not set `SKIP_SIGNATURE_VERIFICATION=true` outside local debugging.
+팀 레포에서 작업 브랜치의 PR을 `main`에 머지하면 main CI 성공 후 자동 배포됩니다.
+PR 검사만 성공하거나 main CI가 실패한 경우에는 배포되지 않습니다.
+서버는 Cloudflare Workers Free, DB는 팀별 D1입니다. 별도 Vercel 배포는 사용하지 않습니다.
+CI 성공과 배포 완료는 별개이며, 배포 로그·커밋 SHA는 운영진이 확인할 수 있습니다.
+`/api/health`는 서버 상태, `/api/ready`는 실제 D1 연결(`SELECT 1`)을 확인합니다.
+이 상태 검사만으로 기능의 데이터 저장·조회까지 검증되는 것은 아닙니다.
+
+DB 변경은 `cloudflare/migrations/`의 새 SQL 파일로 관리하고, **해당 스키마를 쓰는 코드의
+머지 전에** 운영진에게 원격 적용을 요청하세요. 코드 배포가 SQL을 자동 적용하지 않습니다.
+Function 스키마·익스텐션·커맨드 메타데이터 변경 후에는 앱 등록 갱신도 요청합니다.
 
 ## Project map
 
 ```text
 server/
-  src/app.module.ts          SDK module, auto-registration, signature guard
+  src/app.module.ts          SDK module, registration configuration, signature guard
   src/function-endpoint.ts   bare Function Endpoint to v1 ingress mapping
   src/tutorial.functions.ts command metadata and typed app functions
   src/target-token.ts        short-lived signed group target for the bot path
