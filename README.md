@@ -122,8 +122,8 @@ Wrangler의 `.dev.vars`(배포 시 Worker secrets)에 아래 값을 설정합니
 Node 서버에서는 `server/.env`를 사용합니다. 키나 토큰은 Git에 넣지 않습니다.
 
 - `ELEVENLABS_API_KEY`: Text to Speech 권한이 있는 API 키
-- `ELEVENLABS_STUDENT_VOICE_ID`: `PDoCXqBQFGsvfO0hNkEs`로 설정됨
-- `ELEVENLABS_ASSISTANT_VOICE_ID`: `aIyfYczcAioGTbdEA7R1`로 설정됨
+- `ELEVENLABS_STUDENT_VOICE_ID`: `cgSgspJ2msm6clMCkdW9` (`Jessica`)로 설정됨
+- `ELEVENLABS_ASSISTANT_VOICE_ID`: `pNInz6obpgDQGcFmaJgB` (`Adam`)로 설정됨
 - `ELEVENLABS_MODEL_ID`: `eleven_flash_v2_5`로 설정됨
 - `DEMO_TTS_TOKEN`: 별도로 생성한 충분히 긴 무작위 발표자 토큰. 화면에는 이 값만 입력합니다.
 
