@@ -27,11 +27,7 @@ interface ActionPickerProps {
 const MAX_PICK = 3
 
 function tagFor(category: Category, label: string): string | undefined {
-  return ACTION_TAGS[category].find(
-    (action) =>
-      action.label === label ||
-      action.keywords.some((keyword) => label.includes(keyword))
-  )?.tag
+  return ACTION_TAGS[category].find((action) => action.label === label)?.tag
 }
 
 /**
@@ -48,7 +44,13 @@ function ActionPicker({
   const [list, setList] = useState<ActionCandidate[]>(actions)
   const [adding, setAdding] = useState(false)
   const [custom, setCustom] = useState('')
+  const [unsupportedConfirmed, setUnsupportedConfirmed] = useState<Set<string>>(
+    new Set()
+  )
   const confirmed = list.filter((action) => action.confirmed)
+  const needsMeaning = confirmed.some(
+    (action) => !action.actionTag && !unsupportedConfirmed.has(action.id)
+  )
   const mine = list.filter((action) => action.origin === 'student')
   const suggested = list.filter((action) => action.origin !== 'student')
 
@@ -128,6 +130,70 @@ function ActionPicker({
         </VStack>
       )}
 
+      {confirmed
+        .filter((action) => !action.actionTag)
+        .map((action) => (
+          <div
+            key={action.id}
+            className="ff-box"
+          >
+            <Text
+              as="p"
+              typo="13"
+            >
+              {action.label}
+            </Text>
+            <VStack spacing={6}>
+              <Text
+                as="p"
+                typo="12"
+                color="text-neutral-lighter"
+              >
+                이 행동은 어떤 의미인가요? 한 번 확인한 뒤 사례를 찾을게요.
+              </Text>
+              <select
+                aria-label={`${action.label} 행동 의미`}
+                value=""
+                onChange={(event) => {
+                  const tag = event.target.value
+                  if (tag)
+                    setList((current) =>
+                      current.map((a) =>
+                        a.id === action.id ? { ...a, actionTag: tag } : a
+                      )
+                    )
+                }}
+              >
+                <option value="">의미 선택</option>
+                {ACTION_TAGS[category].map((tag) => (
+                  <option
+                    key={tag.tag}
+                    value={tag.tag}
+                  >
+                    {tag.label}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="s"
+                variant="ghost"
+                semantic="secondary"
+                label={
+                  unsupportedConfirmed.has(action.id)
+                    ? '미지원 행동으로 확인했어요'
+                    : '어느 것도 아니에요 · 미지원으로 진행'
+                }
+                disabled={unsupportedConfirmed.has(action.id)}
+                onClick={() =>
+                  setUnsupportedConfirmed(
+                    (current) => new Set([...current, action.id])
+                  )
+                }
+              />
+            </VStack>
+          </div>
+        ))}
+
       {adding ? (
         <HStack spacing={8}>
           <TextInput
@@ -189,7 +255,10 @@ function ActionPicker({
           }
           loading={busy}
           disabled={
-            busy || confirmed.length === 0 || confirmed.length > MAX_PICK
+            busy ||
+            needsMeaning ||
+            confirmed.length === 0 ||
+            confirmed.length > MAX_PICK
           }
           onClick={() => onCompare(confirmed)}
         />

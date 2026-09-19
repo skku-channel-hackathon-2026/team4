@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="ko">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>FailFair · 매칭 검사실</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f5f5f0;
+      color: #202820;
+      font:
+        15px/1.55 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 1280px;
+      margin: 36px auto;
+      padding: 0 22px;
+    }
+    h1 {
+      font-size: 30px;
+      margin-bottom: 6px;
+    }
+    h2 {
+      font-size: 20px;
+    }
+    p {
+      margin: 8px 0 18px;
+    }
+    .muted {
+      color: #626a62;
+      font-size: 13px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+    .panel,
+    .card {
+      background: white;
+      border: 1px solid #dfe3da;
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 16px;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin: 14px 0 5px;
+    }
+    input,
+    select,
+    textarea,
+    button {
+      font: inherit;
+    }
+    input,
+    select,
+    textarea {
+      width: 100%;
+      padding: 9px;
+      border: 1px solid #c5ccc0;
+      border-radius: 7px;
+      background: #fff;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 78px;
+    }
+    button {
+      cursor: pointer;
+      border: 0;
+      border-radius: 8px;
+      background: #236342;
+      color: white;
+      padding: 10px 17px;
+      margin: 10px 6px 0 0;
+    }
+    button.secondary {
+      background: #e8eee5;
+      color: #203827;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    td,
+    th {
+      text-align: left;
+      padding: 7px;
+      border-bottom: 1px solid #eee;
+    }
+    .score {
+      font-size: 27px;
+      font-weight: 750;
+      color: #236342;
+    }
+    .pill {
+      font-size: 12px;
+      background: #ecf1e9;
+      padding: 4px 9px;
+      border-radius: 20px;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 12px;
+      max-height: 450px;
+      overflow: auto;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+    #error {
+      color: #a22222;
+      white-space: pre-wrap;
+    }
+    .checks {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .checks label {
+      font-size: 13px;
+      font-weight: 400;
+    }
+    .checks input {
+      width: auto;
+    }
+    #output:empty:before {
+      content: "왼쪽에서 상황을 입력하고 검사하기를 눌러주세요.";
+    }
+    .notice {
+      background: #fff5d9;
+      padding: 12px;
+      border-radius: 8px;
+    }
+    dl {
+      display: grid;
+      grid-template-columns: 85px 1fr;
+      gap: 8px;
+    }
+    dt {
+      font-weight: 600;
+    }
+    dd {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+    @media (max-width: 850px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      main {
+        margin: 20px auto;
+      }
+    }
+  </style>
+  <main>
+    <span class="pill">LOCAL · 가상 사례</span>
+    <h1>매칭 검사실</h1>
+    <p>내 상황을 바꾸며 선배 사례 순위와 선택 근거를 직접 확인하세요.</p>
+    <p class="notice">
+      상황 추출 이후의 검색 알고리즘만 검사합니다. Gemini는 호출하지 않으며,
+      입력은 저장하지 않습니다. 점수는 성공 확률이 아닙니다. 실제 서비스 화면과
+      별도의 개발용 검사 도구입니다.
+    </p>
+    <div class="layout">
+      <section class="panel">
+        <label for="preset">시작 예시 / 검색할 사례 집합</label
+        ><select id="preset"></select
+        ><button class="secondary" id="load">예시 불러오기</button
+        ><button class="secondary" id="clear">입력 비우기</button>
+        <p class="muted">
+          일반 예시는 전체 시연 사례를, ‘한계 검사’는 대조 사례 2개를
+          검색합니다. 입력을 바꿔도 이 사례 집합은 유지됩니다.
+        </p>
+        <form id="form">
+          <label for="category">카테고리</label
+          ><select id="category"></select
+          ><label for="situation">현재 고민</label
+          ><textarea
+            id="situation"
+            rows="4"
+            placeholder="어떤 상황인지 자유롭게 적어주세요"
+          ></textarea
+          ><label for="problem">문제 유형 (선택)</label
+          ><input
+            id="problem"
+            placeholder="모르면 비워두세요"
+            list="problemTypes"
+          /><datalist id="problemTypes"></datalist
+          ><label for="goal">원하는 결과</label><textarea id="goal"></textarea
+          ><label for="constraints">제약 조건 (한 줄에 하나)</label
+          ><textarea
+            id="constraints"
+            placeholder="남은 팀원 2명&#10;평일 저녁에는 아르바이트"
+          ></textarea
+          ><label for="progress">현재 진행 상황</label
+          ><input id="progress" /><label for="urgency">남은 시간</label
+          ><select id="urgency"></select
+          ><label for="action">비교할 행동</label
+          ><select id="action"></select>
+          <details style="margin-top: 18px">
+            <summary>항목 제외 실험</summary>
+            <p class="muted">
+              선택한 항목을 0점으로 만들어 영향을 비교합니다. 나머지 배점은
+              늘어나지 않습니다.
+            </p>
+            <div id="omit" class="checks"></div>
+          </details>
+          <button id="run" type="submit">검사하기</button
+          ><button type="button" id="download" class="secondary" disabled>
+            결과 JSON 저장
+          </button>
+          <div id="error" role="alert"></div>
+        </form>
+      </section>
+      <section>
+        <div id="status" aria-live="polite"></div>
+        <div id="output"></div>
+        <details class="panel">
+          <summary>검색 대상 사례 원문</summary>
+          <p class="muted">
+            실제 경험이 아닌 가상 데이터입니다. 기대하는 선배가 후보 안에
+            있는지도 확인하세요.
+          </p>
+          <div id="pool">검사 후 표시됩니다.</div>
+        </details>
+        <details class="panel">
+          <summary>입력·출력 JSON</summary>
+          <pre id="json"></pre>
+        </details>
+      </section>
+    </div>
+  </main>
+  <script type="module">
+    const $ = (id) => document.getElementById(id),
+      names = {
+        problem: "문제 유형",
+        context: "상황 맥락",
+        constraints: "주요 제약",
+        goal: "목표",
+        urgency: "긴급도",
+      };
+    let config, last, dataset, previous;
+    function el(tag, text, parent) {
+      const n = document.createElement(tag);
+      n.textContent = text;
+      if (parent) parent.append(n);
+      return n;
+    }
+    function options(id, items) {
+      $(id).replaceChildren(
+        ...items.map(([value, label]) => {
+          const n = el("option", label);
+          n.value = value;
+          return n;
+        }),
+      );
+    }
+    function actions() {
+      options("action", [
+        ...config.actions[$("category").value].map((a) => [a.tag, a.label]),
+        ["", "미지원 행동으로 검사"],
+      ]);
+    }
+    function invalidate() {
+      last = null;
+      $("download").disabled = true;
+      $("status").textContent =
+        "입력이 변경됐습니다. 검사하기를 눌러 새 결과를 확인하세요.";
+    }
+    function fill(q) {
+      dataset = q.id;
+      for (const [field, key] of [
+        ["situation", "situation"],
+        ["problem", "problemType"],
+        ["goal", "goal"],
+        ["progress", "progress"],
+      ])
+        $(field).value = q.situation[key] || "";
+      $("category").value = q.situation.category;
+      $("constraints").value = q.situation.constraints.join("\n");
+      $("urgency").value = q.situation.deadline.urgency;
+      actions();
+      $("action").value = q.actionTag;
+      document
+        .querySelectorAll("#omit input")
+        .forEach((n) => (n.checked = false));
+      invalidate();
+    }
+    function detail(parent, label, text) {
+      el("dt", label, parent);
+      el("dd", text || "미확인", parent);
+    }
+    function render(data) {
+      $("output").replaceChildren();
+      const card = data.cards[0];
+      const state = {
+        matched: "관련 사례",
+        reference: "참고 사례 · 차이/정보 부족 확인",
+        no_case: "연결할 사례 없음",
+      };
+      $("status").textContent =
+        `전체 ${data.counts.all}개 → 같은 카테고리 ${data.counts.category}개 → 같은 행동 ${data.counts.eligible}개`;
+      const intro = el("div", "", $("output"));
+      intro.className = "panel";
+      el("h2", state[card.status] || card.status, intro);
+      if (previous) {
+        el(
+          "p",
+          `이전 선택: ${previous} → 이번 선택: ${card.caseId || "없음"}`,
+          intro,
+        );
+      }
+      previous = card.caseId || "없음";
+      for (const d of card.differences || []) el("p", d, intro);
+      for (const [index, row] of data.ranked.entries()) {
+        const box = el("article", "", $("output"));
+        box.className = "card";
+        el("span", `${index + 1}위 · ${row.item.id}`, box).className = "pill";
+        el("h2", row.item.title, box);
+        el("div", `${row.info.score.toFixed(2)}점`, box).className = "score";
+        el(
+          "p",
+          "내부 정렬 점수 · 각 항목 최대 20점 · 후보 집합이 바뀌면 점수도 달라질 수 있습니다.",
+          box,
+        ).className = "muted";
+        const table = el("table", "", box);
+        const head = el("tr", "", table);
+        ["항목", "원시 근거", "최대 배점", "최종 기여"].forEach((t) =>
+          el("th", t, head),
+        );
+        for (const key of config.dimensions) {
+          const tr = el("tr", "", table);
+          [
+            names[key],
+            row.info.components[key].toFixed(3),
+            row.info.distributed.budgets[key].toFixed(2),
+            row.info.distributed.contributions[key].toFixed(2),
+          ].forEach((t) => el("td", t, tr));
+        }
+        const dl = el("dl", "", box);
+        detail(dl, "선배 상황", row.item.situation);
+        detail(dl, "선배 목표", row.item.goal);
+        detail(dl, "선배 제약", row.item.constraints.join("\n"));
+        detail(dl, "유사점", row.info.similarities.join("\n"));
+        detail(dl, "차이/미확인", row.info.differences.join("\n"));
+        const more = el("details", "", box);
+        el("summary", "행동·관찰된 결과·원문 보기", more);
+        el("pre", JSON.stringify(row.item, null, 2), more);
+      }
+      $("pool").replaceChildren();
+      for (const c of data.cases) {
+        const d = el("details", "", $("pool"));
+        el("summary", `${c.id} · ${c.title}`, d);
+        el("pre", JSON.stringify(c, null, 2), d);
+      }
+      $("json").textContent = JSON.stringify(data, null, 2);
+      last = data;
+      $("download").disabled = false;
+    }
+    $("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("run").disabled = true;
+      $("error").textContent = "";
+      try {
+        const input = {
+          dataset,
+          situation: {
+            category: $("category").value,
+            situation: $("situation").value,
+            problemType: $("problem").value.trim() || undefined,
+            goal: $("goal").value,
+            progress: $("progress").value,
+            constraints: $("constraints")
+              .value.split("\n")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            deadline: { raw: "", urgency: $("urgency").value },
+          },
+          actionTag: $("action").value,
+          omit: [...document.querySelectorAll("#omit input:checked")].map(
+            (n) => n.value,
+          ),
+        };
+        const res = await fetch("/inspect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        const data = await res.json();
+        if (!res.ok) throw Error(data.error);
+        render(data);
+      } catch (e) {
+        $("error").textContent = e.message;
+      } finally {
+        $("run").disabled = false;
+      }
+    });
+    $("category").onchange = () => {
+      actions();
+      invalidate();
+    };
+    $("form").addEventListener("input", invalidate);
+    $("preset").onchange = () => {
+      $("status").textContent =
+        "예시 불러오기를 눌러 선택한 사례 집합을 적용하세요.";
+    };
+    $("load").onclick = () =>
+      fill(config.presets.find((q) => q.id === $("preset").value));
+    $("clear").onclick = () => {
+      for (const id of [
+        "situation",
+        "problem",
+        "goal",
+        "constraints",
+        "progress",
+      ])
+        $(id).value = "";
+      $("urgency").value = "unknown";
+      invalidate();
+    };
+    $("download").onclick = () => {
+      if (!last) return;
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(last, null, 2)], { type: "application/json" }),
+      );
+      const a = el("a", "");
+      a.href = url;
+      a.download = "failfair-matching-result.json";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    try {
+      config = await (await fetch("/config")).json();
+      options(
+        "preset",
+        config.presets.map((q) => [q.id, q.label]),
+      );
+      options(
+        "category",
+        config.categories.map((c) => [c.id, c.name]),
+      );
+      options("urgency", Object.entries(config.urgencies));
+      for (const key of config.dimensions) {
+        const label = el("label", "", $("omit"));
+        const input = el("input", "", label);
+        input.type = "checkbox";
+        input.value = key;
+        label.append(document.createTextNode(names[key]));
+      }
+      options(
+        "problemTypes",
+        [
+          ...new Set(
+            config.presets.map((q) => q.situation.problemType).filter(Boolean),
+          ),
+        ].map((t) => [t, t]),
+      );
+      fill(config.presets[0]);
+      $("form").requestSubmit();
+    } catch (e) {
+      $("error").textContent = "검사 도구를 불러오지 못했습니다: " + e.message;
+    }
+  </script>
+</html>

@@ -11,7 +11,10 @@
     "test": "tsx --test src/*.test.ts src/failfair/*.test.ts",
     "typecheck": "tsc --noEmit",
     "register": "node dist/src/register.js",
-    "test:conversation:live": "node --import tsx src/failfair/evaluation/live.ts"
+    "test:conversation:live": "node --import tsx src/failfair/evaluation/live.ts",
+    "test:matching": "node --import tsx src/failfair/evaluation/matching.ts",
+    "bench:matching": "node --import tsx src/failfair/evaluation/matching-benchmark.ts",
+    "inspect:matching": "node --import tsx src/failfair/evaluation/playground.ts"
   },
   "author": "",
   "license": "ISC",

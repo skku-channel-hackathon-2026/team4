@@ -3,6 +3,7 @@ import { reconcileConfirmedContext } from "./student-context.js";
 import { z } from "zod";
 import {
   CaseSubmissionSchema,
+  ACTION_TAGS,
   CATEGORIES,
   CommandActionInputSchema,
   CompareInputSchema,
@@ -77,7 +78,7 @@ import {
   silentNotifier,
   type GroupNotifier,
 } from "./notifier.js";
-import { matchActions } from "./retrieval.service.js";
+import { matchActions, resultCards } from "./retrieval.service.js";
 import {
   SosService,
   chooseContactableCase,
@@ -381,6 +382,27 @@ export class FailfairFunctions {
         { type: FAILFAIR_ERRORS.inProgress },
       );
     }
+    const parsed = CompareInputSchema.safeParse(input);
+    if (
+      !parsed.success ||
+      input.actions.some(
+        (action) =>
+          action.confirmed &&
+          action.actionTag &&
+          !ACTION_TAGS[session.category].some(
+            (tag) => tag.tag === action.actionTag,
+          ),
+      )
+    ) {
+      throw new FunctionCallError(
+        "Invalid confirmed actions",
+        FunctionCallErrorCode.BadRequest,
+        { type: FAILFAIR_ERRORS.invalidInput },
+      );
+    }
+    // A server-controlled mode; real and demo evidence never share a comparison.
+    const source =
+      process.env.FAILFAIR_CASE_SOURCE === "demo" ? "demo" : "real";
     const cases = await this.cases.listApproved(session.category);
     return this.sessions.mutate(
       session,
@@ -388,22 +410,33 @@ export class FailfairFunctions {
       input.expectedRevision,
       (current) => {
         current.actions = input.actions;
+        current.caseSource = source;
         current.results = matchActions(
           current.situation,
           current.actions,
           cases,
-        );
+          { source },
+        ).map((result) => ({
+          ...result,
+          id: `${result.id}-r${current.revision + 1}`,
+          ...(result.alternatives
+            ? {
+                alternatives: result.alternatives.map((other) => ({
+                  ...other,
+                  id: `${other.id}-r${current.revision + 1}`,
+                })),
+              }
+            : {}),
+        }));
         current.state = "RESULTS";
-        const demo = current.results.some(
-          (result) => result.sourceType === "demo",
-        );
+        const demo = source === "demo";
         return {
           state: current.state,
           revision: current.revision + 1,
           results: current.results,
           notice:
             "비슷한 경험을 한 선배의 기록입니다. 상황의 차이에 따라 결과는 달라질 수 있습니다." +
-            (demo ? " 일부 사례는 가상 시연 데이터입니다." : ""),
+            (demo ? " 가상 시연 모드입니다. 실제 선배 기록이 아닙니다." : ""),
         };
       },
     );
@@ -428,9 +461,17 @@ export class FailfairFunctions {
     @Ctx() ctx: Context,
     @Input() input: z.infer<typeof GetCaseInputSchema>,
   ): Promise<z.infer<typeof GetCaseOutputSchema>> {
-    await this.sessions.load(ctx, input.sessionId);
-    const item = await this.cases.get(input.caseId);
-    if (!item || item.status !== "approved") {
+    const session = await this.sessions.load(ctx, input.sessionId);
+    const linked = resultCards(session.results).some(
+      (result) => result.caseId === input.caseId,
+    );
+    const item = linked ? await this.cases.get(input.caseId) : undefined;
+    if (
+      !item ||
+      item.status !== "approved" ||
+      item.category !== session.category ||
+      item.sourceType !== (session.caseSource ?? "real")
+    ) {
       throw new FunctionCallError(
         "Case not found",
         FunctionCallErrorCode.NotFound,
@@ -455,7 +496,32 @@ export class FailfairFunctions {
   ): Promise<z.infer<typeof OkOutputSchema>> {
     const session = await this.sessions.load(ctx, input.sessionId);
     // 결과 카드에 연결된 사례를 같이 남겨 두면 사례별 "도움 됨"을 셀 수 있다. 재전송은 한 번만 쌓인다.
-    const result = session.results.find((entry) => entry.id === input.resultId);
+    const result = resultCards(session.results).find(
+      (entry) => entry.id === input.resultId,
+    );
+    if (!result)
+      throw new FunctionCallError(
+        "Result not found",
+        FunctionCallErrorCode.NotFound,
+        { type: FAILFAIR_ERRORS.notFoundOrForbidden },
+      );
+    if (input.event === "tool_copied") {
+      const item = result.caseId
+        ? await this.cases.get(result.caseId)
+        : undefined;
+      if (
+        !item ||
+        item.status !== "approved" ||
+        item.category !== session.category ||
+        item.sourceType !== (session.caseSource ?? "real") ||
+        !item.tool?.body.trim()
+      )
+        throw new FunctionCallError(
+          "No available tool for this result",
+          FunctionCallErrorCode.BadRequest,
+          { type: FAILFAIR_ERRORS.invalidInput },
+        );
+    }
     await recordFeedback({
       requestId: input.requestId,
       sessionId: session.id,

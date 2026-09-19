@@ -32,9 +32,7 @@ export interface GoldenQuery {
    * 한 사례 안에 행동이 여럿 등장하는 경우 (§5.1). 이 사례는 나열된 모든 행동에서
    * "선배가 실제로 이 행동을 했음"으로 잡혀야 한다.
    *
-   * 주의: 이 사례가 여러 행동 카드에 동시에 뜰 때 "같은 사례"임을 화면에 표시하는 것은
-   * 아직 구현돼 있지 않다. buildResult가 행동마다 1순위 하나만 돌려주고 사례가 겹치는지는
-   * 보지 않는다. §5.1의 "독립적인 근거처럼 세지 않는다"는 C가 결과 조립 단계에서 처리해야 한다.
+   * 같은 사례가 여러 카드에 나오면 결과 조립 단계에서 중복 근거임을 표시한다.
    */
   expectMultiActionCaseId?: string;
 }
@@ -108,9 +106,7 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     intent:
       "§5.3 사례 없음. 팀원 제외 요청은 태그만 있고 사례가 0건이다. 이 행동을 한 선배가 없다는 사실이 결과에 드러나야 한다.",
     situation: teamUnreachable,
-    actions: [
-      { actionTag: "request_member_removal", expectStatus: "reference" },
-    ],
+    actions: [{ actionTag: "request_member_removal", expectStatus: "no_case" }],
   },
   {
     id: "gq-tp-04",
@@ -138,7 +134,8 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     actions: [
       { actionTag: "change_study_method", expectStatus: "matched" },
       { actionTag: "ask_help", expectStatus: "matched" },
-      { actionTag: "replan_courses", expectStatus: "matched" },
+      // 같은 행동은 있으나 철회 기한·목표·문제 유형이 달라 충분한 유사성을 주장하지 않는다.
+      { actionTag: "replan_courses", expectStatus: "reference" },
     ],
   },
   {
@@ -161,7 +158,7 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     id: "gq-gr-03",
     intent: "§5.3 사례 없음. 성적 이의신청은 태그만 있고 사례가 0건이다.",
     situation: gradesRecovery,
-    actions: [{ actionTag: "request_grade_review", expectStatus: "reference" }],
+    actions: [{ actionTag: "request_grade_review", expectStatus: "no_case" }],
   },
   {
     id: "gq-cl-01",
@@ -170,7 +167,8 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
     actions: [
       { actionTag: "reduce_role", expectStatus: "matched" },
       { actionTag: "share_workload", expectStatus: "matched" },
-      { actionTag: "discuss_leaving", expectStatus: "matched" },
+      // 탈퇴·후임 모집 사례는 더 긴 시간이 있었으므로 현재 긴급도에서는 참고로만 제공.
+      { actionTag: "discuss_leaving", expectStatus: "reference" },
     ],
   },
   {
@@ -200,12 +198,12 @@ export const GOLDEN_QUERIES: readonly GoldenQuery[] = [
       {
         actionTag: "recruit_replacement",
         expectRanked: ["club-reduce-then-quit"],
-        expectStatus: "matched",
+        expectStatus: "reference",
       },
       {
         actionTag: "discuss_leaving",
         expectRanked: ["club-reduce-then-quit"],
-        expectStatus: "matched",
+        expectStatus: "reference",
       },
     ],
     expectMultiActionCaseId: "club-reduce-then-quit",

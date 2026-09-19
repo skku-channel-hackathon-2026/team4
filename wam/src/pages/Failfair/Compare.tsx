@@ -202,6 +202,7 @@ function ComparePage({
           key={result.id}
           result={result}
           helpful={helpfulIds.has(result.id)}
+          helpfulIds={helpfulIds}
           onOpenCase={onOpenCase}
           onHelpful={onHelpful}
         />

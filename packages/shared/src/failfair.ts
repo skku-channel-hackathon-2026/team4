@@ -568,13 +568,14 @@ export const ActionResultStatusSchema = z.enum([
   "no_case",
 ]);
 
-export const ActionResultSchema = z.object({
+const ActionResultBaseSchema = z.object({
   id: z.string(),
   action: ActionCandidateSchema,
   status: ActionResultStatusSchema,
   caseId: z.string().optional(),
   caseTitle: z.string().optional(),
   sourceType: CaseSourceSchema.optional(),
+  comparedFields: z.array(z.string()).optional(),
   similarities: z.array(z.string()).default([]),
   differences: z.array(z.string()).default([]),
   unknowns: z.array(z.string()).default([]),
@@ -583,6 +584,11 @@ export const ActionResultSchema = z.object({
   cost: z.string().optional(),
   conditions: z.array(z.string()).default([]),
   toolTitle: z.string().optional(),
+});
+export const ActionResultSchema = ActionResultBaseSchema.extend({
+  /** 다른 경과를 보인 승인 사례. 대표 사례와 같은 화면 구성으로 펼쳐 본다. */
+  alternatives: z.array(ActionResultBaseSchema).max(2).optional(),
+  unsupported: z.boolean().optional(),
 });
 export type ActionResult = z.infer<typeof ActionResultSchema>;
 
@@ -633,7 +639,18 @@ export type ConfirmSituationOutput = z.infer<
 >;
 
 export const CompareInputSchema = RequestBase.extend({
-  actions: z.array(ActionCandidateSchema).min(1).max(3),
+  actions: z
+    .array(ActionCandidateSchema)
+    .min(1)
+    .max(3)
+    .refine(
+      (actions) => new Set(actions.map((a) => a.id)).size === actions.length,
+      "Action ids must be unique",
+    )
+    .refine(
+      (actions) => actions.some((a) => a.confirmed),
+      "Confirm at least one action",
+    ),
 });
 export const CompareOutputSchema = z.object({
   state: SessionStateSchema,

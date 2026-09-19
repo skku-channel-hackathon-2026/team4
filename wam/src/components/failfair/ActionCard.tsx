@@ -12,6 +12,7 @@ interface ActionCardProps {
   onOpenCase: (caseId: string, resultId: string) => void
   onHelpful: (resultId: string) => void
   helpful: boolean
+  helpfulIds?: ReadonlySet<string>
 }
 
 function List({ items }: { items: string[] }) {
@@ -60,6 +61,7 @@ function ActionCard({
   onOpenCase,
   onHelpful,
   helpful,
+  helpfulIds,
 }: ActionCardProps) {
   const { action } = result
   return (
@@ -97,7 +99,15 @@ function ActionCard({
               size="xs"
               variant="default"
             >
-              연결할 사례 없음
+              {result.unsupported ? '미지원 행동' : '연결할 사례 없음'}
+            </Badge>
+          )}
+          {result.sourceType === 'real' && (
+            <Badge
+              size="xs"
+              variant="default"
+            >
+              실제 경험
             </Badge>
           )}
           {result.sourceType === 'demo' && (
@@ -135,8 +145,22 @@ function ActionCard({
                 typo="14"
               >
                 {result.caseTitle}
+                <br />
+                <small>사례 ID: {result.caseId}</small>
               </Text>
             </Row>
+            {result.comparedFields && result.comparedFields.length > 0 && (
+              <Row label="비교 정보가 있는 항목">
+                <Text
+                  as="p"
+                  typo="12"
+                  color="text-neutral-light"
+                >
+                  {result.comparedFields.join(' · ')} (조건 충족을 보장하지
+                  않아요)
+                </Text>
+              </Row>
+            )}
             {result.similarities.length > 0 && (
               <Row label="유사점">
                 <List items={result.similarities} />
@@ -209,6 +233,33 @@ function ActionCard({
               />
             </HStack>
           </>
+        )}
+        {result.alternatives && result.alternatives.length > 0 && (
+          <details>
+            <summary>
+              같은 행동의 다른 경과 보기 ({result.alternatives.length})
+            </summary>
+            <VStack spacing={8}>
+              <Text
+                as="p"
+                typo="12"
+                color="text-neutral-light"
+              >
+                조건과 후속 행동이 다른 별도 기록이에요. 어떤 결과가 정답이라는
+                의미는 아니에요.
+              </Text>
+              {result.alternatives.map((other) => (
+                <ActionCard
+                  key={other.id}
+                  result={other}
+                  onOpenCase={onOpenCase}
+                  onHelpful={onHelpful}
+                  helpful={helpfulIds?.has(other.id) ?? false}
+                  helpfulIds={helpfulIds}
+                />
+              ))}
+            </VStack>
+          </details>
         )}
       </VStack>
     </div>
