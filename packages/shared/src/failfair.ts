@@ -37,6 +37,8 @@ export const FAILFAIR_ERRORS = {
   staleSession: "STALE_SESSION",
   modelUnavailable: "MODEL_UNAVAILABLE",
   inProgress: "IN_PROGRESS",
+  /** SOS는 서버가 서명한 그룹 채팅 표식이 있어야 보낼 수 있다. */
+  chatTargetRequired: "CHAT_TARGET_REQUIRED",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -467,6 +469,11 @@ export const FailfairWamArgsSchema = z.object({
   chatId: z.string().default(""),
   chatType: z.string().default(""),
   chatTitle: z.string().default(""),
+  /**
+   * 서버가 서명한 이 채팅방 표식. 그룹 채팅에서 연 경우에만 채워진다.
+   * SOS 알림 대상은 이 값으로만 정한다 (클라이언트가 부르는 chatId는 믿지 않는다).
+   */
+  chatToken: z.string().default(""),
   mode: ModeSchema.optional(),
   /** 호스트가 안 줄 수도 있어 서버가 함께 넣어 준다 (튜토리얼과 동일). */
   appId: z.string().optional(),
@@ -554,9 +561,11 @@ export const SosRequestSchema = z.object({
   caseId: z.string().min(1),
   caseTitle: z.string(),
   channelId: z.string().min(1),
-  /** 요청이 시작된 채팅방. 그룹이면 봇 알림이 여기로 간다. */
+  /** 요청이 시작된 그룹 채팅. 봇 알림이 여기로 가고, 두 사람은 여기서 이어 간다. */
   chatId: z.string().default(""),
   chatType: z.string().default(""),
+  /** 그 방 이름. 선배가 다른 방에서 열어도 어디로 가야 할지 알 수 있게 함께 보여 준다. */
+  chatTitle: z.string().default(""),
   studentManagerId: z.string().min(1),
   seniorManagerId: z.string().min(1),
   message: z.string(),
@@ -576,8 +585,8 @@ export const SosRequestInputSchema = z.object({
   sessionId: z.string().min(1),
   caseId: z.string().min(1),
   message: z.string().trim().min(1).max(500),
-  chatId: z.string().default(""),
-  chatType: z.string().default(""),
+  /** WAM이 받은 `chatToken`을 그대로 돌려준다. 서버가 서명·채널·본인·만료를 확인한다. */
+  chatTarget: z.string().default(""),
 });
 export const SosRequestOutputSchema = z.object({
   request: SosRequestSchema,

@@ -52,7 +52,11 @@ import {
   TokenManager,
   type Context,
 } from "@channel.io/app-sdk-server";
-import { appId } from "../config.js";
+import { appId, appSecret } from "../config.js";
+import {
+  createTutorialTargetToken,
+  verifyChatTarget,
+} from "../target-token.js";
 import { getRecord, setRecord } from "../records.js";
 import {
   AppRecordsCaseRepository,
@@ -86,6 +90,9 @@ import {
 } from "./session.service.js";
 
 const RECORD_FEEDBACK = "failfair:feedback";
+
+/** SOS 대상 표식의 수명. 한 번 연 WAM에서 상담을 마치기에 넉넉하고, 오래 새지 않을 정도. */
+const CHAT_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
 
 @Extension({ name: "command", systemVersion: "v1" })
 export class CommandExtension {
@@ -182,20 +189,40 @@ export class FailfairFunctions {
     params: CommandActionInput,
   ): z.infer<typeof CommandResultSchema> {
     const mode = ModeSchema.safeParse(params.input.mode);
+    const chatId = params.chat?.id ?? "";
+    const chatType = params.chat?.type ?? "";
+    const chatTitle = params.trigger?.attributes?.chatTitle ?? "";
+    const managerId = ctx.caller.id ?? "";
+    // SOS 알림이 갈 방은 여기서만 정해진다. 호스트가 알려 준 방을 서명해 두고,
+    // 나중에 클라이언트가 부르는 chatId 대신 이 표식을 믿는다.
+    const chatToken =
+      chatType === "group" && chatId && managerId
+        ? createTutorialTargetToken(
+            {
+              channelId: ctx.channel.id,
+              groupId: chatId,
+              managerId,
+              chatTitle,
+              expiresAt: Date.now() + CHAT_TOKEN_TTL_MS,
+            },
+            appSecret,
+          )
+        : "";
     return {
       type: "wam",
       attributes: {
         appId,
         name: FAILFAIR_WAM_NAME,
         wamArgs: {
-          chatId: params.chat?.id ?? "",
-          chatType: params.chat?.type ?? "",
-          chatTitle: params.trigger?.attributes?.chatTitle ?? "",
+          chatId,
+          chatType,
+          chatTitle,
+          chatToken,
           mode: mode.success ? mode.data : undefined,
           // 호스트가 주지 않는 방(예: 나와의 대화방)도 있어 서버가 함께 넣는다.
           appId,
           channelId: ctx.channel.id,
-          managerId: ctx.caller.id ?? "",
+          managerId,
         },
       },
     };
@@ -433,7 +460,7 @@ export class FailfairFunctions {
 
   @Func(FAILFAIR_FUNCTIONS.sosRequest)
   @Description(
-    "새내기가 사례를 남긴 실제 선배에게 SOS를 보낸다. 그룹 채팅이면 봇 알림을 올린다",
+    "새내기가 사례를 남긴 실제 선배에게 SOS를 보낸다. 그룹 채팅에서만 보낼 수 있고 그 방에 봇 알림을 올린다",
   )
   @InputSchema(SosRequestInputSchema)
   @OutputSchema(SosRequestOutputSchema)
@@ -442,6 +469,19 @@ export class FailfairFunctions {
     @Input() input: z.infer<typeof SosRequestInputSchema>,
   ): Promise<z.infer<typeof SosRequestOutputSchema>> {
     const managerId = requireOwner(ctx);
+    // 알림이 갈 방은 `open`에서 서명해 둔 표식으로만 정한다. 그래야 다른 그룹을
+    // 겨냥해 봇 메시지를 올릴 수 없고, 그룹이 아닌 방에서 시작한 요청도 막힌다.
+    const target = verifyChatTarget(input.chatTarget, appSecret, {
+      channelId: ctx.channel.id,
+      managerId,
+    });
+    if (!target) {
+      throw new FunctionCallError(
+        "SOS requires a verified group chat",
+        FunctionCallErrorCode.BadRequest,
+        { type: FAILFAIR_ERRORS.chatTargetRequired },
+      );
+    }
     await this.sessions.load(ctx, input.sessionId);
     const item = await this.cases.get(input.caseId);
     if (!item || item.status !== "approved") {
@@ -454,8 +494,9 @@ export class FailfairFunctions {
     const { request, created } = await this.sos.request({
       item,
       channelId: ctx.channel.id,
-      chatId: input.chatId,
-      chatType: input.chatType,
+      chatId: target.groupId,
+      chatType: "group",
+      chatTitle: target.chatTitle ?? "",
       studentManagerId: managerId,
       message: input.message,
     });
@@ -486,7 +527,7 @@ export class FailfairFunctions {
 
   @Func(FAILFAIR_FUNCTIONS.sosRespond)
   @Description(
-    "선배가 SOS를 수락하거나 거절한다. 그룹 채팅이면 봇 알림을 올린다",
+    "선배가 SOS를 수락하거나 거절한다. 요청이 시작된 그룹 채팅에 봇 알림을 올린다",
   )
   @InputSchema(SosRespondInputSchema)
   @OutputSchema(SosRespondOutputSchema)

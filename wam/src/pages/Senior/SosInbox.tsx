@@ -21,13 +21,29 @@ interface SosInboxPageProps {
     sosId: string,
     status: 'accepted' | 'declined'
   ) => Promise<{ request: SosRequest; notified: boolean }>
+  /** 선배가 지금 앱을 연 채팅방. 요청은 다른 방에서 왔을 수 있다. */
+  currentChatId: string
 }
 
-/** 선배에게 온 SOS 목록. 수락하면 요청이 온 채팅방에 봇 알림이 올라간다. */
-function SosInboxPage({ listRequests, respond }: SosInboxPageProps) {
+/** 요청이 시작된 방. 선배가 다른 방에서 열었어도 어디로 가야 할지 알려 준다. */
+function roomName(request: SosRequest): string {
+  return request.chatTitle ? `'${request.chatTitle}'` : '요청이 온 채팅방'
+}
+
+/**
+ * 선배에게 온 SOS 목록. 목록은 채널 전체라 다른 방에서 온 요청도 보인다.
+ * 앱은 방을 옮겨 주지 못하므로, 답한 뒤 어느 방으로 가야 하는지는 글로 알린다.
+ */
+function SosInboxPage({
+  listRequests,
+  respond,
+  currentChatId,
+}: SosInboxPageProps) {
   const [requests, setRequests] = useState<SosRequest[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  /** 방금 답한 요청에서 봇 알림이 실제로 올라갔는지. 안 올라갔으면 선배가 직접 가야 한다. */
+  const [notified, setNotified] = useState<Record<string, boolean>>({})
 
   const load = useCallback(() => {
     listRequests()
@@ -45,10 +61,11 @@ function SosInboxPage({ listRequests, respond }: SosInboxPageProps) {
     setBusyId(sosId)
     setError(null)
     try {
-      const { request } = await respond(sosId, status)
+      const { request, notified: posted } = await respond(sosId, status)
       setRequests((current) =>
         (current ?? []).map((item) => (item.id === request.id ? request : item))
       )
+      setNotified((current) => ({ ...current, [request.id]: posted }))
     } catch (cause) {
       setError(errorMessage(cause, '답을 보내지 못했어요.'))
     } finally {
@@ -111,6 +128,14 @@ function SosInboxPage({ listRequests, respond }: SosInboxPageProps) {
                 >
                   {item.caseTitle}
                 </Badge>
+                {item.chatTitle && (
+                  <Badge
+                    size="xs"
+                    variant="default"
+                  >
+                    {item.chatTitle}
+                  </Badge>
+                )}
               </HStack>
               <Text
                 as="p"
@@ -150,12 +175,24 @@ function SosInboxPage({ listRequests, respond }: SosInboxPageProps) {
                   />
                 </HStack>
               )}
+              {item.status === 'pending' && item.chatId !== currentChatId && (
+                <Text
+                  as="p"
+                  typo="13"
+                  color="text-neutral-light"
+                >
+                  {roomName(item)} 방에서 온 요청이에요. 수락하면 그 방에서 이어
+                  가게 돼요.
+                </Text>
+              )}
               {item.status === 'accepted' && (
                 <Text
                   as="p"
                   typo="13"
                 >
-                  수락했어요. 요청이 온 채팅방에서 이어서 대화해 주세요.
+                  {notified[item.id] === false
+                    ? `수락했어요. 다만 봇 알림이 올라가지 않아서, ${roomName(item)} 방에 직접 한마디 남겨 주셔야 새내기가 알 수 있어요.`
+                    : `수락했어요. ${roomName(item)} 방에서 이어서 대화해 주세요.`}
                 </Text>
               )}
             </VStack>

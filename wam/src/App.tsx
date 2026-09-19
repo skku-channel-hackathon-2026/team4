@@ -452,7 +452,7 @@ function App() {
         session.id,
         caseDetail.id,
         message,
-        { chatId: data?.chatId ?? '', chatType: data?.chatType ?? '' }
+        data?.chatToken ?? ''
       )
       setSos(request)
       setSosNotified(notified)
@@ -667,6 +667,7 @@ function App() {
         <SosInboxPage
           listRequests={listSeniorSos}
           respond={api.sosRespond}
+          currentChatId={data?.chatId ?? ''}
         />
       )
   } else {
@@ -760,6 +761,8 @@ function App() {
                   request={sos}
                   busy={busy}
                   notified={sosNotified}
+                  currentChatId={data?.chatId ?? ''}
+                  canSend={Boolean(data?.chatToken)}
                   onSend={sendSos}
                   onRefresh={refreshSos}
                 />

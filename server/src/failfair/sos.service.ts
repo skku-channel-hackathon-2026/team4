@@ -8,30 +8,100 @@ import {
   type Case,
   type SosRequest,
 } from "@tutorial/shared";
-import { getRecord, setRecord } from "../records.js";
+import {
+  getRecord,
+  insertRecordIfAbsent,
+  listRecords,
+  replaceRecordIfField,
+  setRecord,
+} from "../records.js";
 
 /**
  * SOS 요청 저장·규칙. B가 소유한다.
- * 사례와 같이 `app_records`에 JSON 배열로 둔다 (해커톤 규모).
+ *
+ * 요청 하나가 `app_records` 한 행이다. 예전처럼 전체 목록을 한 키에 배열로 두면
+ * "읽고 → 고치고 → 통째로 덮어쓰는" 사이에 남의 요청이나 남의 수락이 사라진다.
+ * 그래서 새 요청은 빈 자리에만 넣고(`claim`), 응답은 아직 `pending`일 때만
+ * 바꾼다(`settle`). 둘 다 DB가 판정하므로 동시에 눌러도 한 쪽만 이긴다.
  */
 export interface SosStore {
-  list(): Promise<SosRequest[]>;
-  saveAll(items: SosRequest[]): Promise<void>;
+  /** 이 채널의 모든 요청. */
+  list(channelId: string): Promise<SosRequest[]>;
+  /**
+   * (채널·사례·새내기) 한 자리에 요청 하나. 이미 답을 기다리는 요청이 있으면
+   * 그것을 돌려주고 `created: false`. 거절된 요청 자리는 새 요청이 대체한다.
+   */
+  claim(
+    request: SosRequest,
+  ): Promise<{ request: SosRequest; created: boolean }>;
+  /** 아직 `pending`일 때만 답을 적는다. 남이 먼저 답했으면 undefined. */
+  settle(
+    request: SosRequest,
+    status: "accepted" | "declined",
+    now: number,
+  ): Promise<SosRequest | undefined>;
 }
 
 const RECORD_SOS = "failfair:sos";
 
+/** ID 안의 `:`이 키 경계를 흐리지 않도록 조각마다 감싼다. */
+const part = (value: string) => encodeURIComponent(value);
+
+function channelPrefix(channelId: string): string {
+  return `${RECORD_SOS}:${part(channelId)}:`;
+}
+
+/** 한 새내기가 한 사례에 대해 가지는 자리 하나. 중복 방지를 DB 키로 보장한다. */
+function slotKey(request: SosRequest): string {
+  return (
+    channelPrefix(request.channelId) +
+    `${part(request.caseId)}:${part(request.studentManagerId)}`
+  );
+}
+
+function parse(candidate: unknown): SosRequest | undefined {
+  const parsed = SosRequestSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export const appRecordsSosStore: SosStore = {
-  async list() {
-    const raw = await getRecord<unknown>(RECORD_SOS);
-    if (!Array.isArray(raw)) return [];
-    return raw.flatMap((candidate) => {
-      const parsed = SosRequestSchema.safeParse(candidate);
-      return parsed.success ? [parsed.data] : [];
+  async list(channelId) {
+    const rows = await listRecords<unknown>(channelPrefix(channelId));
+    return rows.flatMap((row) => {
+      const request = parse(row);
+      return request ? [request] : [];
     });
   },
-  async saveAll(items) {
-    await setRecord(RECORD_SOS, items);
+
+  async claim(request) {
+    const key = slotKey(request);
+    if (await insertRecordIfAbsent(key, request))
+      return { request, created: true };
+    const existing = parse(await getRecord<unknown>(key));
+    // 자리는 있는데 읽지 못했다면(깨진 JSON) 경합이 아니라 손상이다. 그냥 덮어쓴다.
+    if (!existing) {
+      await setRecord(key, request);
+      return { request, created: true };
+    }
+    // 거절당한 요청 자리에는 다시 부탁할 수 있다. 그 사이 남이 바꿨으면 다시 읽는다.
+    if (existing.status === "declined") {
+      if (await replaceRecordIfField(key, "status", "declined", request))
+        return { request, created: true };
+      const reread = parse(await getRecord<unknown>(key));
+      return { request: reread ?? existing, created: false };
+    }
+    return { request: existing, created: false };
+  },
+
+  async settle(request, status, now) {
+    const updated: SosRequest = { ...request, status, respondedAt: now };
+    const changed = await replaceRecordIfField(
+      slotKey(request),
+      "status",
+      "pending",
+      updated,
+    );
+    return changed ? updated : undefined;
   },
 };
 
@@ -70,6 +140,7 @@ export class SosService {
       channelId: string;
       chatId: string;
       chatType: string;
+      chatTitle: string;
       studentManagerId: string;
       message: string;
     },
@@ -82,30 +153,20 @@ export class SosService {
         { type: FAILFAIR_ERRORS.notFoundOrForbidden },
       );
     }
-    const all = await this.store.list();
-    const existing = all.find(
-      (request) =>
-        request.channelId === input.channelId &&
-        request.caseId === input.item.id &&
-        request.studentManagerId === input.studentManagerId &&
-        request.status === "pending",
-    );
-    if (existing) return { request: existing, created: false };
-    const request: SosRequest = {
+    return this.store.claim({
       id: newSosId(now),
       caseId: input.item.id,
       caseTitle: input.item.title,
       channelId: input.channelId,
       chatId: input.chatId,
       chatType: input.chatType,
+      chatTitle: input.chatTitle,
       studentManagerId: input.studentManagerId,
       seniorManagerId: input.item.authorManagerId ?? "",
       message: input.message,
       status: "pending",
       createdAt: now,
-    };
-    await this.store.saveAll([...all, request]);
-    return { request, created: true };
+    });
   }
 
   /** 내가 보낸(student) 또는 나에게 온(senior) 요청. 최신순. */
@@ -114,14 +175,12 @@ export class SosService {
     managerId: string,
     role: "student" | "senior",
   ): Promise<SosRequest[]> {
-    const all = await this.store.list();
+    const all = await this.store.list(channelId);
     return all
-      .filter(
-        (request) =>
-          request.channelId === channelId &&
-          (role === "student"
-            ? request.studentManagerId === managerId
-            : request.seniorManagerId === managerId),
+      .filter((request) =>
+        role === "student"
+          ? request.studentManagerId === managerId
+          : request.seniorManagerId === managerId,
       )
       .sort((a, b) => b.createdAt - a.createdAt);
   }
@@ -134,16 +193,18 @@ export class SosService {
     status: "accepted" | "declined",
     now = Date.now(),
   ): Promise<{ request: SosRequest; changed: boolean }> {
-    const all = await this.store.list();
-    const index = all.findIndex(
-      (request) => request.id === sosId && request.channelId === channelId,
-    );
-    const target = all[index];
+    const all = await this.store.list(channelId);
+    const target = all.find((request) => request.id === sosId);
     if (!target || target.seniorManagerId !== seniorManagerId) throw notFound();
     if (target.status !== "pending") return { request: target, changed: false };
-    const updated: SosRequest = { ...target, status, respondedAt: now };
-    all[index] = updated;
-    await this.store.saveAll(all);
+    const updated = await this.store.settle(target, status, now);
+    // 그 사이 다른 창에서 먼저 답했다면 그 답이 정답이다. 알림도 한 번만 나간다.
+    if (!updated) {
+      const latest = (await this.store.list(channelId)).find(
+        (request) => request.id === sosId,
+      );
+      return { request: latest ?? target, changed: false };
+    }
     return { request: updated, changed: true };
   }
 }

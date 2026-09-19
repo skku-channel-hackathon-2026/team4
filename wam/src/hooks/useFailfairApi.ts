@@ -117,7 +117,8 @@ export interface FailfairApi {
     sessionId: string,
     caseId: string,
     message: string,
-    chat: { chatId: string; chatType: string }
+    /** `open`이 내려 준 서명된 채팅방 표식. 서버가 알림 대상을 이 값으로만 정한다. */
+    chatTarget: string
   ): Promise<{ request: SosRequest; notified: boolean }>
   sosList(role: 'student' | 'senior'): Promise<{ requests: SosRequest[] }>
   sosRespond(
@@ -176,8 +177,8 @@ export function createFailfairApi(appId: string): FailfairApi {
     listCases: (status) => call(appId, F.listCases, status ? { status } : {}),
     reviewCase: (caseId, status) =>
       call(appId, F.reviewCase, { caseId, status }),
-    sosRequest: (sessionId, caseId, message, chat) =>
-      call(appId, F.sosRequest, { sessionId, caseId, message, ...chat }),
+    sosRequest: (sessionId, caseId, message, chatTarget) =>
+      call(appId, F.sosRequest, { sessionId, caseId, message, chatTarget }),
     sosList: (role) => call(appId, F.sosList, { role }),
     sosRespond: (sosId, status) => call(appId, F.sosRespond, { sosId, status }),
   }
