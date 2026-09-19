@@ -168,3 +168,24 @@ test("explicit summary request stops questions", async () => {
   i.messages[0].content = i.message;
   assert.equal((await gateway(output()).analyze(i)).readyToConfirm, true);
 });
+
+test("default fetch is invoked with the global this (Cloudflare Workers Illegal invocation guard)", async () => {
+  // workerd는 fetch를 잘못된 this로 부르면 TypeError를 낸다. Node는 관대해서 테스트에서 흉내낸다.
+  const original = globalThis.fetch;
+  const strictFetch = function (
+    this: unknown,
+    ...args: Parameters<typeof fetch>
+  ) {
+    if (this !== globalThis && this !== undefined)
+      throw new TypeError("Illegal invocation");
+    return mock(output())(...args);
+  } as typeof fetch;
+  globalThis.fetch = strictFetch;
+  try {
+    const gateway = new GeminiGateway("fake", new RuleBasedGateway());
+    const result = await gateway.analyze(input());
+    assert.equal(result.pendingField, "deadline");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
