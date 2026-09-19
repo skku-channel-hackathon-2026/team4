@@ -27,7 +27,7 @@ npm run demo:gemini
 ## 서버 호출 계약
 
 ```js
-const result = await analyzeTurn({context, messages, message}, gateway);
+const result = await analyzeTurn({ context, messages, message }, gateway);
 ```
 
 messages는 현재 세션의 기존 메시지, message는 아직 반영하지 않은 새 메시지다. 각 메시지는 id/role/text를 가진다. id 중복은 거부한다.
@@ -37,6 +37,7 @@ messages는 현재 세션의 기존 메시지, message는 아직 반영하지 �
 최근 메시지 12개와 기존 context의 인용 근거 메시지만 모델에 보낸다. 입력 크기 제한을 넘으면 context_limit으로 반환하며 조용히 근거를 삭제하지 않는다. 원문 인용 검증은 서버에 저장된 전체 세션 메시지를 사용한다.
 
 B가 해야 할 통합:
+
 1. 세션 소유권 확인과 메시지 ID/revision/requestId 관리.
 2. 모델 호출 후 expectedRevision 재검사, 성공 시 메시지와 context를 함께 저장.
 3. 성공 결과는 기존 상황 확인과 행동 승인을 무효화한다.

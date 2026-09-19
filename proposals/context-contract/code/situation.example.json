@@ -70,12 +70,7 @@
       {
         "id": "i1",
         "text": "수강량 자체뿐 아니라 학업에 쓸 수 있는 시간의 제약이 핵심일 수 있음",
-        "basedOnFactIds": [
-          "f1",
-          "f2",
-          "f3",
-          "c1"
-        ],
+        "basedOnFactIds": ["f1", "f2", "f3", "c1"],
         "status": "needs_confirmation",
         "confirmationEvidence": []
       }

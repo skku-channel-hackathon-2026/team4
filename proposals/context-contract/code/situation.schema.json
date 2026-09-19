@@ -1,22 +1,13 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schemaVersion",
-    "category",
-    "situation",
-    "searchMapping"
-  ],
+  "required": ["schemaVersion", "category", "situation", "searchMapping"],
   "properties": {
     "schemaVersion": {
       "const": "0.2-draft"
     },
     "category": {
-      "enum": [
-        "grades",
-        "team_project",
-        "club"
-      ]
+      "enum": ["grades", "team_project", "club"]
     },
     "situation": {
       "type": "object",
@@ -40,12 +31,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "topic",
-              "text",
-              "evidence"
-            ],
+            "required": ["id", "topic", "text", "evidence"],
             "properties": {
               "id": {
                 "type": "string",
@@ -64,10 +50,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "messageId",
-                    "quote"
-                  ],
+                  "required": ["messageId", "quote"],
                   "properties": {
                     "messageId": {
                       "type": "string",
@@ -87,35 +70,20 @@
         "goal": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "text",
-            "evidence"
-          ],
+          "required": ["status", "text", "evidence"],
           "properties": {
             "status": {
-              "enum": [
-                "unknown",
-                "known",
-                "unsure",
-                "withheld"
-              ]
+              "enum": ["unknown", "known", "unsure", "withheld"]
             },
             "text": {
-              "type": [
-                "string",
-                "null"
-              ]
+              "type": ["string", "null"]
             },
             "evidence": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "messageId",
-                  "quote"
-                ],
+                "required": ["messageId", "quote"],
                 "properties": {
                   "messageId": {
                     "type": "string",
@@ -154,11 +122,7 @@
               "if": {
                 "properties": {
                   "status": {
-                    "enum": [
-                      "unknown",
-                      "unsure",
-                      "withheld"
-                    ]
+                    "enum": ["unknown", "unsure", "withheld"]
                   }
                 }
               },
@@ -177,12 +141,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "topic",
-              "text",
-              "evidence"
-            ],
+            "required": ["id", "topic", "text", "evidence"],
             "properties": {
               "id": {
                 "type": "string",
@@ -201,10 +160,7 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "messageId",
-                    "quote"
-                  ],
+                  "required": ["messageId", "quote"],
                   "properties": {
                     "messageId": {
                       "type": "string",
@@ -224,30 +180,17 @@
         "attemptedActions": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "items"
-          ],
+          "required": ["status", "items"],
           "properties": {
             "status": {
-              "enum": [
-                "unknown",
-                "known",
-                "unsure",
-                "withheld"
-              ]
+              "enum": ["unknown", "known", "unsure", "withheld"]
             },
             "items": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "id",
-                  "topic",
-                  "text",
-                  "evidence"
-                ],
+                "required": ["id", "topic", "text", "evidence"],
                 "properties": {
                   "id": {
                     "type": "string",
@@ -266,10 +209,7 @@
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "messageId",
-                        "quote"
-                      ],
+                      "required": ["messageId", "quote"],
                       "properties": {
                         "messageId": {
                           "type": "string",
@@ -292,11 +232,7 @@
               "if": {
                 "properties": {
                   "status": {
-                    "enum": [
-                      "unknown",
-                      "unsure",
-                      "withheld"
-                    ]
+                    "enum": ["unknown", "unsure", "withheld"]
                   }
                 }
               },
@@ -334,27 +270,17 @@
                 "minLength": 1
               },
               "origin": {
-                "enum": [
-                  "user",
-                  "suggested"
-                ]
+                "enum": ["user", "suggested"]
               },
               "status": {
-                "enum": [
-                  "proposed",
-                  "confirmed",
-                  "rejected"
-                ]
+                "enum": ["proposed", "confirmed", "rejected"]
               },
               "evidence": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "messageId",
-                    "quote"
-                  ],
+                  "required": ["messageId", "quote"],
                   "properties": {
                     "messageId": {
                       "type": "string",
@@ -368,20 +294,14 @@
                 }
               },
               "actionTag": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": ["string", "null"]
               },
               "confirmationEvidence": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "messageId",
-                    "quote"
-                  ],
+                  "required": ["messageId", "quote"],
                   "properties": {
                     "messageId": {
                       "type": "string",
@@ -416,10 +336,7 @@
                 "if": {
                   "properties": {
                     "status": {
-                      "enum": [
-                        "confirmed",
-                        "rejected"
-                      ]
+                      "enum": ["confirmed", "rejected"]
                     }
                   }
                 },
@@ -464,21 +381,14 @@
                 "minItems": 1
               },
               "status": {
-                "enum": [
-                  "needs_confirmation",
-                  "confirmed",
-                  "rejected"
-                ]
+                "enum": ["needs_confirmation", "confirmed", "rejected"]
               },
               "confirmationEvidence": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "messageId",
-                    "quote"
-                  ],
+                  "required": ["messageId", "quote"],
                   "properties": {
                     "messageId": {
                       "type": "string",
@@ -497,10 +407,7 @@
                 "if": {
                   "properties": {
                     "status": {
-                      "enum": [
-                        "confirmed",
-                        "rejected"
-                      ]
+                      "enum": ["confirmed", "rejected"]
                     }
                   }
                 },
@@ -520,13 +427,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "id",
-              "topic",
-              "question",
-              "whyItMatters",
-              "status"
-            ],
+            "required": ["id", "topic", "question", "whyItMatters", "status"],
             "properties": {
               "id": {
                 "type": "string",
@@ -545,12 +446,7 @@
                 "minLength": 1
               },
               "status": {
-                "enum": [
-                  "unasked",
-                  "answered",
-                  "unsure",
-                  "withheld"
-                ]
+                "enum": ["unasked", "answered", "unsure", "withheld"]
               }
             }
           }
@@ -574,29 +470,17 @@
         "problem_type": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "items"
-          ],
+          "required": ["status", "items"],
           "properties": {
             "status": {
-              "enum": [
-                "known",
-                "unknown",
-                "unsure",
-                "withheld",
-                "unmapped"
-              ]
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
             },
             "items": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "value",
-                  "evidence"
-                ],
+                "required": ["value", "evidence"],
                 "properties": {
                   "value": {
                     "type": "string",
@@ -607,10 +491,7 @@
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "messageId",
-                        "quote"
-                      ],
+                      "required": ["messageId", "quote"],
                       "properties": {
                         "messageId": {
                           "type": "string",
@@ -633,12 +514,7 @@
               "if": {
                 "properties": {
                   "status": {
-                    "enum": [
-                      "unknown",
-                      "unsure",
-                      "withheld",
-                      "unmapped"
-                    ]
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
                   }
                 }
               },
@@ -655,29 +531,17 @@
         "constraint_tags": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "items"
-          ],
+          "required": ["status", "items"],
           "properties": {
             "status": {
-              "enum": [
-                "known",
-                "unknown",
-                "unsure",
-                "withheld",
-                "unmapped"
-              ]
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
             },
             "items": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "value",
-                  "evidence"
-                ],
+                "required": ["value", "evidence"],
                 "properties": {
                   "value": {
                     "type": "string",
@@ -688,10 +552,7 @@
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "messageId",
-                        "quote"
-                      ],
+                      "required": ["messageId", "quote"],
                       "properties": {
                         "messageId": {
                           "type": "string",
@@ -714,12 +575,7 @@
               "if": {
                 "properties": {
                   "status": {
-                    "enum": [
-                      "unknown",
-                      "unsure",
-                      "withheld",
-                      "unmapped"
-                    ]
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
                   }
                 }
               },
@@ -736,29 +592,17 @@
         "goal_tags": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "items"
-          ],
+          "required": ["status", "items"],
           "properties": {
             "status": {
-              "enum": [
-                "known",
-                "unknown",
-                "unsure",
-                "withheld",
-                "unmapped"
-              ]
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
             },
             "items": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "value",
-                  "evidence"
-                ],
+                "required": ["value", "evidence"],
                 "properties": {
                   "value": {
                     "type": "string",
@@ -769,10 +613,7 @@
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "messageId",
-                        "quote"
-                      ],
+                      "required": ["messageId", "quote"],
                       "properties": {
                         "messageId": {
                           "type": "string",
@@ -795,12 +636,7 @@
               "if": {
                 "properties": {
                   "status": {
-                    "enum": [
-                      "unknown",
-                      "unsure",
-                      "withheld",
-                      "unmapped"
-                    ]
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
                   }
                 }
               },
@@ -817,29 +653,17 @@
         "urgency": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "status",
-            "items"
-          ],
+          "required": ["status", "items"],
           "properties": {
             "status": {
-              "enum": [
-                "known",
-                "unknown",
-                "unsure",
-                "withheld",
-                "unmapped"
-              ]
+              "enum": ["known", "unknown", "unsure", "withheld", "unmapped"]
             },
             "items": {
               "type": "array",
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "value",
-                  "evidence"
-                ],
+                "required": ["value", "evidence"],
                 "properties": {
                   "value": {
                     "type": "string",
@@ -850,10 +674,7 @@
                     "items": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": [
-                        "messageId",
-                        "quote"
-                      ],
+                      "required": ["messageId", "quote"],
                       "properties": {
                         "messageId": {
                           "type": "string",
@@ -877,12 +698,7 @@
               "if": {
                 "properties": {
                   "status": {
-                    "enum": [
-                      "unknown",
-                      "unsure",
-                      "withheld",
-                      "unmapped"
-                    ]
+                    "enum": ["unknown", "unsure", "withheld", "unmapped"]
                   }
                 }
               },

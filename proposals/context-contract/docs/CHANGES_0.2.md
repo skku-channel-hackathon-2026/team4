@@ -19,13 +19,13 @@
 code 디렉터리에서 `npm ci` 후 `npm test`.
 
 ```js
-import { buildSearchInput } from './pipeline.mjs';
+import { buildSearchInput } from "./pipeline.mjs";
 const result = buildSearchInput(context, {
   messages: storedUserMessages,
   confirmedContext: session.confirmedContext,
-  approvedActionIds: session.approvedActionIds
+  approvedActionIds: session.approvedActionIds,
 });
-if (result.status === 'ready') {
+if (result.status === "ready") {
   // result.input을 사례 검색 서비스로 전달
 }
 ```
@@ -47,7 +47,7 @@ ready.input은 golden 예시와 같은 category / situation / actions 형식이�
 
 현재 golden 형식에는 미확인 긴급도 표현이 없다. unknown/unsure/withheld/unmapped 축이 있으면 needs_mapping을 반환한다. 질문을 거부한 사용자에게 같은 질문을 반복하라는 뜻이 아니다. UI에서 진행 제한을 알리거나 B와 별도의 부분 검색 계약을 정해야 한다. 태그를 임의 생성하지 않는다.
 
-mapUrgencyHours는 실수 시간 단위 입력을 받는다. [0,12), [24,72], [96,168], (168,∞)만 매핑하며 나머지는 unmapped다. 12~24시간, 72~96시간 구간은 기존 어휘의 설명만으로 결정하지 않는다. 팀 합의 후 vocab과 테스트를 함께 변경한다. 기한 경과는 음수로 입력해 unmapped로 남긴다.
+mapUrgencyHours는 실수 시간 단위 입력을 받는다. [0,12), [24,72], [96,168], (168,∞)만 매핑하며 나머지는 unmapped다. 12~~24시간, 72~~96시간 구간은 기존 어휘의 설명만으로 결정하지 않는다. 팀 합의 후 vocab과 테스트를 함께 변경한다. 기한 경과는 음수로 입력해 unmapped로 남긴다.
 
 인용 문자열이 실제 메시지에 존재하는지와 그 인용이 태그 의미를 정말 뒷받침하는지는 별개다. 의미 타당성은 모델 평가와 사용자 확인이 필요하다. 이 모듈은 자연어 이해 모델이나 질문 생성기를 구현한 것이 아니다.
 
