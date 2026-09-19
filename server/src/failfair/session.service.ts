@@ -104,13 +104,34 @@ export const d1SessionStore: SessionStore = {
 
   async commit(session, expectedRevision, requestId, response, now) {
     const db = getDatabase();
+    if (typeof db.batch !== "function") {
+      // Migration 0004 persists the response in an AFTER UPDATE trigger. Both
+      // writes commit or roll back together, without an HTTP batch API.
+      const committed = await db
+        .prepare(
+          "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ?, pending_response_json = ? " +
+            "WHERE id = ? AND revision = ? RETURNING revision",
+        )
+        .bind(
+          session.state,
+          session.revision,
+          JSON.stringify(session),
+          now,
+          requestId,
+          JSON.stringify({ response }),
+          session.id,
+          expectedRevision,
+        )
+        .first<{ revision: number }>();
+      return committed?.revision === session.revision;
+    }
     // 두 문장이 한 트랜잭션이다. 응답 기록은 "방금 그 UPDATE가 내 것이었을 때"만 들어간다:
     // revision이 새 값이고 last_request_id가 내 requestId일 때. 다른 창이 같은 revision을
     // 먼저 차지했으면 UPDATE는 0행이고 last_request_id는 그쪽 것이라 INSERT도 0행이다.
     const results = await db.batch([
       db
         .prepare(
-          "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ? " +
+          "UPDATE failfair_sessions SET state = ?, revision = ?, body_json = ?, updated_at = ?, last_request_id = ?, pending_response_json = NULL " +
             "WHERE id = ? AND revision = ?",
         )
         .bind(
