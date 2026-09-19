@@ -10,8 +10,7 @@
     "start": "node dist/main.js",
     "test": "tsx --test src/*.test.ts src/failfair/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "register": "node dist/src/register.js",
-    "test:conversation:live": "node --import tsx src/failfair/evaluation/live.ts"
+    "register": "node dist/src/register.js"
   },
   "author": "",
   "license": "ISC",
