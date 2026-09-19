@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Badge, HStack, Text, VStack } from '@channel.io/bezier-react/beta'
 import {
   CATEGORIES,
@@ -12,6 +13,8 @@ import Section from '../../components/failfair/Section'
 interface CaseDetailPageProps {
   item: Case
   onToolCopied?: () => void
+  /** 제목 아래에 붙는 SOS 상자. 연락 가능한 실제 선배 사례에서만 넘긴다. */
+  sosSlot?: ReactNode
 }
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -36,7 +39,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /** v2 §3.1 6단계: 실제 행동 순서, 복구 영수증, 적용 조건, 복구 도구. */
-function CaseDetailPage({ item, onToolCopied }: CaseDetailPageProps) {
+function CaseDetailPage({ item, onToolCopied, sosSlot }: CaseDetailPageProps) {
   const categoryName =
     CATEGORIES.find((category) => category.id === item.category)?.name ??
     item.category
@@ -74,6 +77,8 @@ function CaseDetailPage({ item, onToolCopied }: CaseDetailPageProps) {
           {item.title}
         </Text>
       </VStack>
+
+      {sosSlot}
 
       <Section title="당시 상황">
         <div className="ff-box">

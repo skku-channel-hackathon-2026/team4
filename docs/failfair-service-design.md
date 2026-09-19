@@ -21,6 +21,18 @@
 | C 대화·검색 | `server/src/failfair/model-gateway.ts`, `retrieval.service.ts`                                                                                                             | 규칙 기반 게이트웨이와 점수 매칭. LLM 게이트웨이는 `createModelGateway`에 끼우면 됨 |
 | D 콘텐츠·QA | `packages/shared/src/cases.ts`, `docs/`, `scripts/smoke-*.mjs`                                                                                                             | 가상 사례 5개. 실제 사례는 선배 입력 화면으로 등록 후 승인                          |
 
+## SOS: 새내기 → 실제 선배
+
+사례 상세에서 **실제 경험 + 연락 허용** 사례에만 "이 선배에게 SOS 보내기"가 보인다 (가상 시연 사례, 본인 사례 제외).
+선배의 신원은 사례 등록 때 저장한 채널톡 매니저 ID다. 학과·학번은 받지 않는다.
+
+1. 새내기가 한두 줄 메시지로 SOS를 보낸다 → `failfair.sosRequest`. 같은 사례에 대기 중 요청이 있으면 그것을 돌려준다.
+2. 요청이 시작된 방이 그룹 채팅이면 앱이 봇(망선박)으로 알림을 올린다. 실패해도 요청은 저장되고 `notified=false`로 알려 준다.
+3. 선배가 `/망선박 선배` → SOS 요청에서 수락·거절 → `failfair.sosRespond`. 받은 선배만 답할 수 있고 한 번만 바뀐다.
+4. 수락하면 같은 방에 봇 알림이 올라가고, 실제 대화는 그 그룹 채팅에서 이어 간다. 앱은 1:1 방을 만들 권한이 없다.
+
+저장은 `app_records`의 `failfair:sos`. 봇 알림은 `writeGroupMessage` 권한이 있는 그룹에서만 되며, 나와의 대화방·DM에서는 저장만 된다.
+
 ## 아직 없는 것
 
 - 실제 모델 연결. `MODEL_PROVIDER`, `MODEL_API_KEY`가 없으면 규칙 기반으로 동작한다. 키는 운영진이 Workers 비밀 변수로 넣어야 한다.

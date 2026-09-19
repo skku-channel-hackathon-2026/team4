@@ -24,6 +24,10 @@ export const FAILFAIR_FUNCTIONS = {
   submitCase: "failfair.submitCase",
   listCases: "failfair.listCases",
   reviewCase: "failfair.reviewCase",
+  // SOS: 새내기 → 사례를 남긴 실제 선배
+  sosRequest: "failfair.sosRequest",
+  sosList: "failfair.sosList",
+  sosRespond: "failfair.sosRespond",
 } as const;
 
 /** UI가 분기 처리할 수 있는 오류 코드 (FunctionCallError의 type) */
@@ -413,7 +417,11 @@ export const GetCaseInputSchema = z.object({
   sessionId: z.string().min(1),
   caseId: z.string().min(1),
 });
-export const GetCaseOutputSchema = z.object({ case: CaseSchema });
+export const GetCaseOutputSchema = z.object({
+  case: CaseSchema,
+  /** 이 사례의 선배에게 SOS를 보낼 수 있는가 (실제 경험 + 연락 허용 + 본인 사례 아님). */
+  contactable: z.boolean().default(false),
+});
 
 export const FeedbackInputSchema = z.object({
   sessionId: z.string().min(1),
@@ -519,3 +527,61 @@ export const PROBLEM_TYPES: Record<
     },
   ],
 };
+
+// ---------------------------------------------------------------------------
+// SOS: 새내기가 매칭된 실제 선배에게 도움을 요청하고, 선배가 수락하면 그 채팅방에서 이어 간다.
+// 선배의 신원은 사례 등록 때 저장한 채널톡 매니저 ID다. 가상 시연 사례에는 선배가 없다.
+// ---------------------------------------------------------------------------
+
+export const SosStatusSchema = z.enum(["pending", "accepted", "declined"]);
+export type SosStatus = z.infer<typeof SosStatusSchema>;
+
+export const SosRequestSchema = z.object({
+  id: z.string().min(1),
+  caseId: z.string().min(1),
+  caseTitle: z.string(),
+  channelId: z.string().min(1),
+  /** 요청이 시작된 채팅방. 그룹이면 봇 알림이 여기로 간다. */
+  chatId: z.string().default(""),
+  chatType: z.string().default(""),
+  studentManagerId: z.string().min(1),
+  seniorManagerId: z.string().min(1),
+  message: z.string(),
+  status: SosStatusSchema,
+  createdAt: z.number(),
+  respondedAt: z.number().optional(),
+});
+export type SosRequest = z.infer<typeof SosRequestSchema>;
+
+export const SOS_STATUS_LABELS: Record<SosStatus, string> = {
+  pending: "선배 답 기다리는 중",
+  accepted: "선배가 수락했어요",
+  declined: "지금은 어렵대요",
+};
+
+export const SosRequestInputSchema = z.object({
+  sessionId: z.string().min(1),
+  caseId: z.string().min(1),
+  message: z.string().trim().min(1).max(500),
+  chatId: z.string().default(""),
+  chatType: z.string().default(""),
+});
+export const SosRequestOutputSchema = z.object({
+  request: SosRequestSchema,
+  /** 봇 알림이 그룹 채팅에 올라갔는지. 실패해도 요청은 저장된다. */
+  notified: z.boolean(),
+});
+export const SosListInputSchema = z.object({
+  role: z.enum(["student", "senior"]),
+});
+export const SosListOutputSchema = z.object({
+  requests: z.array(SosRequestSchema),
+});
+export const SosRespondInputSchema = z.object({
+  sosId: z.string().min(1),
+  status: z.enum(["accepted", "declined"]),
+});
+export const SosRespondOutputSchema = z.object({
+  request: SosRequestSchema,
+  notified: z.boolean(),
+});

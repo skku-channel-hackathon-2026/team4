@@ -11,6 +11,7 @@ import {
   type ReplyOutput,
   type SessionView,
   type Situation,
+  type SosRequest,
   type StartOutput,
 } from '@tutorial/shared'
 
@@ -58,7 +59,10 @@ export interface FailfairApi {
     actions: ActionCandidate[]
   ): Promise<CompareOutput>
   getSession(sessionId: string): Promise<SessionView>
-  getCase(sessionId: string, caseId: string): Promise<{ case: Case }>
+  getCase(
+    sessionId: string,
+    caseId: string
+  ): Promise<{ case: Case; contactable?: boolean }>
   feedback(
     sessionId: string,
     resultId: string,
@@ -67,6 +71,18 @@ export interface FailfairApi {
   submitCase(input: CaseSubmission): Promise<{ case: Case }>
   listCases(status?: CaseStatus): Promise<{ cases: Case[] }>
   reviewCase(caseId: string, status: CaseStatus): Promise<{ case: Case }>
+  // SOS
+  sosRequest(
+    sessionId: string,
+    caseId: string,
+    message: string,
+    chat: { chatId: string; chatType: string }
+  ): Promise<{ request: SosRequest; notified: boolean }>
+  sosList(role: 'student' | 'senior'): Promise<{ requests: SosRequest[] }>
+  sosRespond(
+    sosId: string,
+    status: 'accepted' | 'declined'
+  ): Promise<{ request: SosRequest; notified: boolean }>
 }
 
 export function createFailfairApi(appId: string): FailfairApi {
@@ -109,6 +125,10 @@ export function createFailfairApi(appId: string): FailfairApi {
     listCases: (status) => call(appId, F.listCases, status ? { status } : {}),
     reviewCase: (caseId, status) =>
       call(appId, F.reviewCase, { caseId, status }),
+    sosRequest: (sessionId, caseId, message, chat) =>
+      call(appId, F.sosRequest, { sessionId, caseId, message, ...chat }),
+    sosList: (role) => call(appId, F.sosList, { role }),
+    sosRespond: (sosId, status) => call(appId, F.sosRespond, { sosId, status }),
   }
 }
 

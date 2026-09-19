@@ -9,6 +9,7 @@ import {
   type Case,
   type SessionView,
   type Situation,
+  type SosRequest,
 } from '@tutorial/shared'
 
 /**
@@ -64,6 +65,7 @@ export function installDevBridge() {
   )
 
   const cases: Case[] = [...DEMO_CASES]
+  const sosRequests: SosRequest[] = []
   const sessions = new Map<string, SessionView & { asked: number }>()
   const QUESTIONS = [
     '언제까지 해결해야 하나요? 남은 시간이나 마감을 알려 주세요.',
@@ -282,7 +284,15 @@ export function installDevBridge() {
       case F.getCase: {
         const item = cases.find((candidate) => candidate.id === params.caseId)
         if (!item) throw new Error('dev bridge: case not found')
-        result = { case: item }
+        result = {
+          case: item,
+          contactable:
+            item.status === 'approved' &&
+            item.sourceType === 'real' &&
+            item.allowContact &&
+            !!item.authorManagerId &&
+            item.authorManagerId !== data.managerId,
+        }
         break
       }
       case F.feedback:
@@ -299,6 +309,9 @@ export function installDevBridge() {
           status: 'draft',
           sourceType: 'real',
           version: 1,
+          authorManagerId: params.allowContact
+            ? String(data.managerId)
+            : undefined,
           createdAt: Date.now(),
         } as Case
         cases.push(item)
@@ -320,6 +333,45 @@ export function installDevBridge() {
           status: params.status as Case['status'],
         }
         result = { case: cases[index] }
+        break
+      }
+      case F.sosRequest: {
+        const item = cases.find((candidate) => candidate.id === params.caseId)
+        if (!item) throw new Error('dev bridge: case not found')
+        const request: SosRequest = {
+          id: `sos-dev-${sosRequests.length + 1}`,
+          caseId: item.id,
+          caseTitle: item.title,
+          channelId: String(data.channelId),
+          chatId: String(data.chatId),
+          chatType: String(data.chatType),
+          studentManagerId: String(data.managerId),
+          seniorManagerId: item.authorManagerId ?? 'dev-senior',
+          message: String(params.message),
+          status: 'pending',
+          createdAt: Date.now(),
+        }
+        sosRequests.push(request)
+        result = { request, notified: false }
+        break
+      }
+      case F.sosList:
+        result = {
+          requests: sosRequests.filter((request) =>
+            params.role === 'senior'
+              ? request.seniorManagerId === data.managerId
+              : request.studentManagerId === data.managerId
+          ),
+        }
+        break
+      case F.sosRespond: {
+        const request = sosRequests.find((item) => item.id === params.sosId)
+        if (!request) throw new Error('dev bridge: sos not found')
+        if (request.status === 'pending') {
+          request.status = params.status as SosRequest['status']
+          request.respondedAt = Date.now()
+        }
+        result = { request, notified: false }
         break
       }
       default:

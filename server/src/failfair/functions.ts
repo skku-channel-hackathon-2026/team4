@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 import { z } from "zod";
 import {
   CaseSubmissionSchema,
@@ -23,6 +23,12 @@ import {
   ReplyOutputSchema,
   ReviewCaseInputSchema,
   SessionViewSchema,
+  SosListInputSchema,
+  SosListOutputSchema,
+  SosRequestInputSchema,
+  SosRequestOutputSchema,
+  SosRespondInputSchema,
+  SosRespondOutputSchema,
   StartInputSchema,
   StartOutputSchema,
   SubmitCaseOutputSchema,
@@ -41,7 +47,9 @@ import {
   GetCommandsOutputSchema,
   Input,
   InputSchema,
+  NativeFunctionClient,
   OutputSchema,
+  TokenManager,
   type Context,
 } from "@channel.io/app-sdk-server";
 import { appId } from "../config.js";
@@ -57,7 +65,18 @@ import {
   summarizeSituation,
   type ModelGateway,
 } from "./model-gateway.js";
+import {
+  ChannelGroupNotifier,
+  silentNotifier,
+  type GroupNotifier,
+} from "./notifier.js";
 import { matchActions } from "./retrieval.service.js";
+import {
+  SosService,
+  isContactable,
+  sosRequestedText,
+  sosRespondedText,
+} from "./sos.service.js";
 import {
   SessionService,
   normalizeSituation,
@@ -119,6 +138,19 @@ export class FailfairFunctions {
   private readonly sessions = new SessionService();
   private readonly cases: CaseRepository = new AppRecordsCaseRepository();
   private readonly model: ModelGateway = createModelGateway();
+  private readonly sos = new SosService();
+  private readonly notifier: GroupNotifier;
+
+  constructor(
+    @Optional() tokens?: TokenManager,
+    @Optional() native?: NativeFunctionClient,
+  ) {
+    // SDK 모듈이 토큰·네이티브 클라이언트를 주면 그룹 봇 알림을 켠다. 없으면(단위 테스트) 조용히 건너뛴다.
+    this.notifier =
+      tokens && native
+        ? new ChannelGroupNotifier(tokens, native)
+        : silentNotifier;
+  }
 
   // ---------------------------------------------------------------- 진입
 
@@ -366,7 +398,10 @@ export class FailfairFunctions {
         },
       );
     }
-    return { case: item };
+    return {
+      case: item,
+      contactable: isContactable(item, ctx.caller.id ?? ""),
+    };
   }
 
   @Func(FAILFAIR_FUNCTIONS.feedback)
@@ -393,6 +428,89 @@ export class FailfairFunctions {
   }
 
   // ---------------------------------------------------------------- 선배 입력·검수
+
+  // ---------------------------------------------------------------- SOS
+
+  @Func(FAILFAIR_FUNCTIONS.sosRequest)
+  @Description(
+    "새내기가 사례를 남긴 실제 선배에게 SOS를 보낸다. 그룹 채팅이면 봇 알림을 올린다",
+  )
+  @InputSchema(SosRequestInputSchema)
+  @OutputSchema(SosRequestOutputSchema)
+  async sosRequest(
+    @Ctx() ctx: Context,
+    @Input() input: z.infer<typeof SosRequestInputSchema>,
+  ): Promise<z.infer<typeof SosRequestOutputSchema>> {
+    const managerId = requireOwner(ctx);
+    await this.sessions.load(ctx, input.sessionId);
+    const item = await this.cases.get(input.caseId);
+    if (!item || item.status !== "approved") {
+      throw new FunctionCallError(
+        "Case not found",
+        FunctionCallErrorCode.NotFound,
+        { type: FAILFAIR_ERRORS.notFoundOrForbidden },
+      );
+    }
+    const { request, created } = await this.sos.request({
+      item,
+      channelId: ctx.channel.id,
+      chatId: input.chatId,
+      chatType: input.chatType,
+      studentManagerId: managerId,
+      message: input.message,
+    });
+    const notified = created
+      ? await this.notifier.notify({
+          channelId: ctx.channel.id,
+          chatId: request.chatId,
+          chatType: request.chatType,
+          text: sosRequestedText(request),
+        })
+      : false;
+    return { request, notified };
+  }
+
+  @Func(FAILFAIR_FUNCTIONS.sosList)
+  @Description("내가 보낸(student) 또는 나에게 온(senior) SOS 요청 목록")
+  @InputSchema(SosListInputSchema)
+  @OutputSchema(SosListOutputSchema)
+  async sosList(
+    @Ctx() ctx: Context,
+    @Input() input: z.infer<typeof SosListInputSchema>,
+  ): Promise<z.infer<typeof SosListOutputSchema>> {
+    const managerId = requireOwner(ctx);
+    return {
+      requests: await this.sos.listFor(ctx.channel.id, managerId, input.role),
+    };
+  }
+
+  @Func(FAILFAIR_FUNCTIONS.sosRespond)
+  @Description(
+    "선배가 SOS를 수락하거나 거절한다. 그룹 채팅이면 봇 알림을 올린다",
+  )
+  @InputSchema(SosRespondInputSchema)
+  @OutputSchema(SosRespondOutputSchema)
+  async sosRespond(
+    @Ctx() ctx: Context,
+    @Input() input: z.infer<typeof SosRespondInputSchema>,
+  ): Promise<z.infer<typeof SosRespondOutputSchema>> {
+    const managerId = requireOwner(ctx);
+    const { request, changed } = await this.sos.respond(
+      ctx.channel.id,
+      managerId,
+      input.sosId,
+      input.status,
+    );
+    const notified = changed
+      ? await this.notifier.notify({
+          channelId: ctx.channel.id,
+          chatId: request.chatId,
+          chatType: request.chatType,
+          text: sosRespondedText(request),
+        })
+      : false;
+    return { request, notified };
+  }
 
   @Func(FAILFAIR_FUNCTIONS.submitCase)
   @Description("선배가 실패 사례를 등록한다. 검수 전에는 draft로 보관된다")
