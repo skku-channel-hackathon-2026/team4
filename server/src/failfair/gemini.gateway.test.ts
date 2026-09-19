@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { GeminiGateway } from "./gemini.gateway.js";
 import {
   createModelGateway,
+  FallbackGateway,
   RuleBasedGateway,
   type AnalyzeInput,
 } from "./model-gateway.js";
@@ -67,15 +68,28 @@ const gateway = (data: unknown) =>
     "gemini-3.1-flash-lite",
     mock(data),
   );
-test("factory selects configured provider and rejects missing keys", () => {
-  assert.ok(createModelGateway({}) instanceof RuleBasedGateway);
-  assert.ok(
-    createModelGateway({
-      MODEL_PROVIDER: "gemini",
-      GEMINI_API_KEY: "fake",
-    }) instanceof GeminiGateway,
+test("factory selects configured provider and never throws on misconfiguration", () => {
+  const warnings: string[] = [];
+  const log = (message: string) => warnings.push(message);
+  assert.ok(createModelGateway({}, log) instanceof RuleBasedGateway);
+  const gemini = createModelGateway(
+    { MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "fake" },
+    log,
   );
-  assert.throws(() => createModelGateway({ MODEL_PROVIDER: "gemini" }));
+  assert.ok(gemini instanceof FallbackGateway);
+  assert.equal(gemini.label, "gemini");
+  assert.equal(warnings.length, 0);
+  // 잘못된 설정은 부팅을 막지 않고 규칙 기반으로 내려앉는다 (Worker 전체 500 방지).
+  for (const env of [
+    { MODEL_PROVIDER: "gemini" },
+    { MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "  " },
+    { MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "fake", GEMINI_MODEL: "gpt-4" },
+    { MODEL_PROVIDER: "openai", MODEL_API_KEY: "fake" },
+  ]) {
+    assert.ok(createModelGateway(env, log) instanceof RuleBasedGateway);
+  }
+  assert.equal(warnings.length, 4);
+  assert.ok(warnings.every((message) => !message.includes("fake")));
 });
 test("Gemini preserves context and emits one question without duplicating message", async () => {
   const before = input();

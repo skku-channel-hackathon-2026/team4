@@ -47,9 +47,9 @@ const server = createServer((req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 try {
-  assert.deepEqual(await (await fetch(`${base}/api/health`)).json(), {
-    ok: true,
-  });
+  const health = await (await fetch(`${base}/api/health`)).json();
+  assert.equal(health.ok, true);
+  assert.ok(["gemini", "rule"].includes(health.model), "health.model missing");
   // Whitespace proves verification uses the original bytes rather than reserialized JSON.
   const body =
     '{ "method" : "extension.command.metadata.getCommands", "params" : {} }';

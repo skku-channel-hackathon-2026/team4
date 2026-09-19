@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Situation } from "@tutorial/shared";
 import {
+  FallbackGateway,
   RuleBasedGateway,
+  describeModelConfig,
   detectActionLabels,
   detectProblemType,
   detectUrgency,
   extractDeadlineRaw,
   summarizeSituation,
+  type ModelGateway,
 } from "./model-gateway.js";
 
 const empty = (category: Situation["category"]): Situation => ({
@@ -99,4 +102,95 @@ test("suggestActions keeps the student's actions first and fills from the catalo
   assert.equal(actions[0]?.actionTag, "inform_professor");
   assert.ok(actions.slice(1).every((action) => action.origin === "suggested"));
   assert.equal(new Set(actions.map((action) => action.actionTag)).size, 3);
+});
+
+test("FallbackGateway answers with the rule-based gateway when the primary fails", async () => {
+  const logs: string[] = [];
+  const failing: ModelGateway = {
+    analyze: async () => {
+      throw new Error("HTTP failure");
+    },
+    suggestActions: async () => {
+      throw new Error("boom");
+    },
+  };
+  const gateway = new FallbackGateway(
+    "gemini",
+    failing,
+    new RuleBasedGateway(),
+    (message) => logs.push(message),
+  );
+  const message = "발표가 8시간 남았는데 팀원이 잠수탔어요";
+  const result = await gateway.analyze({
+    category: "team_project",
+    situation: empty("team_project"),
+    messages: [{ role: "student", content: message, at: 1 }],
+    message,
+    questionCount: 0,
+  });
+  assert.equal(result.situation.deadline.urgency, "today");
+  assert.ok(result.nextQuestion || result.readyToConfirm);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /gemini analyze failed/);
+  assert.match(logs[0], /HTTP failure/);
+  const actions = await gateway.suggestActions(result.situation);
+  assert.ok(actions.length > 0);
+  assert.equal(logs.length, 2);
+});
+
+test("FallbackGateway returns the primary result untouched when it succeeds", async () => {
+  const primaryOutput = { situation: empty("grades"), readyToConfirm: true };
+  const primary: ModelGateway = {
+    analyze: async () => primaryOutput,
+    suggestActions: async () => [],
+  };
+  const gateway = new FallbackGateway(
+    "gemini",
+    primary,
+    new RuleBasedGateway(),
+    () => {
+      throw new Error("must not log on success");
+    },
+  );
+  const result = await gateway.analyze({
+    category: "grades",
+    situation: empty("grades"),
+    messages: [],
+    message: "시험을 망쳤어요",
+    questionCount: 0,
+  });
+  assert.equal(result, primaryOutput);
+});
+
+test("describeModelConfig reports what will actually run without echoing values", () => {
+  assert.deepEqual(describeModelConfig({}), { provider: "rule" });
+  assert.deepEqual(describeModelConfig({ MODEL_PROVIDER: "rule" }), {
+    provider: "rule",
+  });
+  assert.deepEqual(
+    describeModelConfig({ MODEL_PROVIDER: "gemini", GEMINI_API_KEY: "k" }),
+    { provider: "gemini", model: "gemini-3.1-flash-lite" },
+  );
+  assert.deepEqual(
+    describeModelConfig({
+      MODEL_PROVIDER: " gemini ",
+      MODEL_API_KEY: "k",
+      GEMINI_MODEL: "gemini-2.5-flash",
+    }),
+    { provider: "gemini", model: "gemini-2.5-flash" },
+  );
+  const missing = describeModelConfig({ MODEL_PROVIDER: "gemini" });
+  assert.equal(missing.provider, "rule");
+  assert.match(missing.warning ?? "", /GEMINI_API_KEY/);
+  const badModel = describeModelConfig({
+    MODEL_PROVIDER: "gemini",
+    GEMINI_API_KEY: "k",
+    GEMINI_MODEL: "gpt-4o",
+  });
+  assert.equal(badModel.provider, "rule");
+  assert.match(badModel.warning ?? "", /GEMINI_MODEL/);
+  // 값을 잘못 넣어도 health 응답에 그 값이 새지 않는다.
+  const leaked = describeModelConfig({ MODEL_PROVIDER: "sk-secret-value" });
+  assert.equal(leaked.provider, "rule");
+  assert.ok(!(leaked.warning ?? "").includes("sk-secret-value"));
 });
