@@ -207,6 +207,77 @@ export const DeadlineSchema = z.object({
   urgency: UrgencySchema.default("unknown"),
 });
 
+/**
+ * 통합 계약 v0.3 (contextMeta). 계약 A(Situation)는 그대로 두고, 검증된 발화
+ * 근거와 질문 토픽별 정보 상태만 선택적으로 덧붙인다. 값은 A에만 존재하며 여기에
+ * 복제하지 않는다. 근거 식별자는 저장된 세션 전체 messages 배열 기준 messageIndex다.
+ */
+export const EvidenceRefSchema = z
+  .object({
+    messageIndex: z.number().int().nonnegative(),
+    quote: z.string().min(1),
+  })
+  .strict();
+export type EvidenceRef = z.infer<typeof EvidenceRefSchema>;
+
+export const SCALAR_EVIDENCE_FIELDS = [
+  "category",
+  "problemType",
+  "situation",
+  "goal",
+  "deadline.raw",
+  "progress",
+] as const;
+export const ARRAY_EVIDENCE_FIELDS = [
+  "constraints",
+  "attemptedActions",
+  "consideredActions",
+] as const;
+
+export const FieldEvidenceSchema = z.union([
+  z
+    .object({
+      field: z.enum(SCALAR_EVIDENCE_FIELDS),
+      refs: z.array(EvidenceRefSchema).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      field: z.enum(ARRAY_EVIDENCE_FIELDS),
+      itemIndex: z.number().int().nonnegative(),
+      refs: z.array(EvidenceRefSchema).min(1),
+    })
+    .strict(),
+]);
+export type FieldEvidence = z.infer<typeof FieldEvidenceSchema>;
+
+export const TopicStateSchema = z.union([
+  z
+    .object({
+      label: z.string().min(1),
+      status: z.literal("unknown"),
+      evidence: z.array(EvidenceRefSchema).min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      label: z.string().min(1),
+      status: z.enum(["known", "unsure", "withheld"]),
+      evidence: z.array(EvidenceRefSchema).min(1),
+    })
+    .strict(),
+]);
+export type TopicState = z.infer<typeof TopicStateSchema>;
+
+export const ContextMetaSchema = z
+  .object({
+    schemaVersion: z.literal("0.3"),
+    fieldEvidence: z.array(FieldEvidenceSchema).optional(),
+    topicStates: z.array(TopicStateSchema).optional(),
+  })
+  .strict();
+export type ContextMeta = z.infer<typeof ContextMetaSchema>;
+
 /** v2 2.2 내부 상황 구조. 학생이 말한 사실만 채우고 미확인은 비워 둔다. */
 /**
  * 학생의 전공. 학과 개편이 잦아 enum으로 고정하지 않고 문자열로 받는다.
@@ -232,8 +303,150 @@ export const SituationSchema = z.object({
   attemptedActions: z.array(z.string()).default([]),
   consideredActions: z.array(z.string()).default([]),
   unknowns: z.array(z.string()).default([]),
+  // 선택적 v0.3 확장. 없으면 레거시 A로 읽는다. 최상위 자동 기본값은 만들지 않는다.
+  contextMeta: ContextMetaSchema.optional(),
 });
 export type Situation = z.infer<typeof SituationSchema>;
+
+/** 외부 호환·검색용 A 투영. contextMeta를 명시적으로 떼어 낸다. */
+export function toLegacySituation(situation: Situation): Situation {
+  const { contextMeta: _omit, ...legacy } = situation;
+  return legacy;
+}
+
+/** 되물을 수 있는 구조 필드와 unknowns 라벨의 정식 대응. */
+export const SITUATION_FIELD_LABELS = {
+  deadline: "마감·남은 시간",
+  progress: "진행 상황",
+  consideredActions: "고려 중인 행동",
+  goal: "원하는 결과",
+} as const;
+
+/**
+ * 네 정식 라벨의 안전한 별칭 화이트리스트(공백 제거·소문자 정규화 후 정확히 일치할
+ * 때만 매핑). 무분별한 키워드 포함 매핑은 하지 않는다 — 진짜 다른 자유 주제를
+ * 잘못 흡수하지 않기 위해서다. 모델이 축약·영문키·띄어쓰기 변형을 낼 때만 정식화한다.
+ */
+const UNKNOWN_LABEL_ALIASES: Record<string, string> = Object.fromEntries(
+  [
+    [
+      "마감·남은 시간",
+      [
+        "deadline",
+        "마감",
+        "마감일",
+        "기한",
+        "제출기한",
+        "마감기한",
+        "남은시간",
+        "남은과제마감일",
+        "마감·남은시간",
+      ],
+    ],
+    ["진행 상황", ["progress", "진행", "진행상황", "진척", "진행정도"]],
+    [
+      "고려 중인 행동",
+      [
+        "consideredactions",
+        "고려중인행동",
+        "고려행동",
+        "고려방안",
+        "고려하는행동",
+      ],
+    ],
+    [
+      "원하는 결과",
+      ["goal", "목표", "목적", "원하는것", "원하는결과", "바라는결과"],
+    ],
+  ].flatMap(([canonical, aliases]) =>
+    (aliases as string[]).map((a) => [a, canonical as string]),
+  ),
+);
+
+/**
+ * unknowns/신호 라벨을 정식 한국어 라벨로 정규화한다. 정식 라벨·영문 필드키·등록된
+ * 별칭만 매핑하고, 그 외 자유 라벨은 그대로 둔다.
+ */
+export function canonicalUnknownLabel(label: string): string {
+  const byKey: Record<string, string> = SITUATION_FIELD_LABELS;
+  if (byKey[label]) return byKey[label];
+  const norm = label.replace(/\s+/g, "").toLowerCase();
+  return UNKNOWN_LABEL_ALIASES[norm] ?? label;
+}
+
+/**
+ * 값이 채워진 필드가 unknowns에도 들어가 있는 모순 라벨 목록을 반환한다.
+ * "분류 실패로 unknowns에 버리는" 오염을 잡는다. 빈 목록이면 일관적이다.
+ */
+export function unknownsConflicts(situation: Situation): string[] {
+  const filled: Record<keyof typeof SITUATION_FIELD_LABELS, boolean> = {
+    deadline: (situation.deadline?.raw ?? "").trim() !== "",
+    progress: (situation.progress ?? "").trim() !== "",
+    consideredActions: (situation.consideredActions ?? []).length > 0,
+    goal: (situation.goal ?? "").trim() !== "",
+  };
+  const conflicts: string[] = [];
+  for (const key of Object.keys(
+    SITUATION_FIELD_LABELS,
+  ) as (keyof typeof SITUATION_FIELD_LABELS)[]) {
+    const label = SITUATION_FIELD_LABELS[key];
+    if (filled[key] && situation.unknowns?.includes(label))
+      conflicts.push(label);
+  }
+  return conflicts;
+}
+
+/** 값이 있는 필드의 라벨을 unknowns에서 제거한 상황을 돌려준다(값 우선). */
+export function pruneResolvedUnknowns(situation: Situation): Situation {
+  const conflicts = unknownsConflicts(situation);
+  if (conflicts.length === 0) return situation;
+  return {
+    ...situation,
+    unknowns: situation.unknowns.filter((u) => !conflicts.includes(u)),
+  };
+}
+
+/**
+ * contextMeta를 저장된 messages와 대조해 검증한다. 오류 문자열 목록을 반환한다.
+ * 구조 검증(Zod)과 별개로, 참조가 실제 학생 발화를 정확히 가리키는지, 배열 인덱스가
+ * 최종 배열 범위 안인지, 토픽 상태가 unknowns와 일관적인지 확인한다.
+ */
+export function validateContextMeta(
+  situation: Situation,
+  messages: Message[],
+): string[] {
+  const meta = situation.contextMeta;
+  if (!meta) return [];
+  const errors: string[] = [];
+  const arrays: Record<(typeof ARRAY_EVIDENCE_FIELDS)[number], string[]> = {
+    constraints: situation.constraints,
+    attemptedActions: situation.attemptedActions,
+    consideredActions: situation.consideredActions,
+  };
+  const validRef = (ref: EvidenceRef): boolean => {
+    const m = messages[ref.messageIndex];
+    return !!m && m.role === "student" && m.content.includes(ref.quote);
+  };
+  for (const fe of meta.fieldEvidence ?? []) {
+    if ("itemIndex" in fe) {
+      const arr = arrays[fe.field];
+      if (fe.itemIndex >= arr.length)
+        errors.push(`itemIndex out of range: ${fe.field}.${fe.itemIndex}`);
+    }
+    if (!fe.refs.every(validRef))
+      errors.push(`invalid field evidence: ${fe.field}`);
+  }
+  for (const ts of meta.topicStates ?? []) {
+    const inUnknowns = situation.unknowns.includes(ts.label);
+    if (ts.status === "known" && inUnknowns)
+      errors.push(`known topic still in unknowns: ${ts.label}`);
+    if (ts.status !== "known" && !inUnknowns)
+      errors.push(`unresolved topic missing from unknowns: ${ts.label}`);
+    if (ts.evidence && !ts.evidence.every(validRef))
+      errors.push(`invalid topic evidence: ${ts.label}`);
+  }
+  return errors;
+}
 
 export const ActionOriginSchema = z.enum(["student", "suggested"]);
 
