@@ -446,7 +446,7 @@
                 "minLength": 1
               },
               "status": {
-                "enum": ["unasked", "answered", "unsure", "withheld"]
+                "enum": ["unasked", "answered", "unsure", "withheld", "asked"]
               }
             }
           }

@@ -108,3 +108,71 @@ test("HTTP and truncated output fail", async () => {
     );
   }
 });
+
+test("confirmed and rejected records cannot be downgraded, changed or deleted", async () => {
+  const messages = read("./messages.search-ready.example.json");
+  for (const field of ["consideredActions", "interpretations"])
+    for (const status of ["confirmed", "rejected"])
+      for (const mode of ["downgrade", "delete", "change"]) {
+        const c = read("./situation.search-ready.example.json");
+        if (field === "interpretations")
+          c.situation.interpretations = [
+            {
+              id: "i1",
+              text: "확인된 해석",
+              basedOnFactIds: ["f1"],
+              status,
+              confirmationEvidence: [
+                { messageId: "u2", quote: messages[1].text },
+              ],
+            },
+          ];
+        c.situation[field][0].status = status;
+        const changed = structuredClone(c);
+        if (mode === "delete") changed.situation[field].shift();
+        else if (mode === "downgrade") {
+          changed.situation[field][0].status =
+            field === "consideredActions" ? "proposed" : "needs_confirmation";
+          changed.situation[field][0].confirmationEvidence = [];
+        } else changed.situation[field][0].text = "모델이 변경";
+        const r = await analyzeTurn(
+          {
+            context: c,
+            messages,
+            message: { id: "u3", role: "user", text: "계속" },
+          },
+          {
+            generate: async () => ({ context: changed, nextQuestionId: null }),
+          },
+        );
+        assert.equal(
+          r.reason,
+          "unapproved_confirmation",
+          `${field} ${status} ${mode}`,
+        );
+      }
+});
+test("issued question becomes asked and cannot be repeated or forgotten", async () => {
+  const first = await run(result());
+  assert.equal(first.context.situation.openQuestions[0].status, "asked");
+  const second = await analyzeTurn(
+    {
+      context: first.context,
+      messages: [message],
+      message: { id: "u2", role: "user", text: "음" },
+    },
+    { generate: async () => result() },
+  );
+  assert.equal(second.reason, "invalid_question");
+  const omitted = structuredClone(first.context);
+  omitted.situation.openQuestions = [];
+  const third = await analyzeTurn(
+    {
+      context: first.context,
+      messages: [message],
+      message: { id: "u2", role: "user", text: "음" },
+    },
+    { generate: async () => ({ context: omitted, nextQuestionId: null }) },
+  );
+  assert.equal(third.context.situation.openQuestions[0].status, "asked");
+});

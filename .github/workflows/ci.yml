@@ -25,6 +25,11 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Context contract tests
+        working-directory: proposals/context-contract/code
+        run: |
+          npm ci --ignore-scripts
+          npm test
       - run: pnpm build:vercel
       - run: pnpm test:vercel
       - run: pnpm build:cloudflare

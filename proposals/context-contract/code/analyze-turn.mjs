@@ -65,7 +65,7 @@ export async function analyzeTurn({ context, messages, message }, gateway) {
       )
     )
       return failed("invalid_output");
-    const next = output.context;
+    const next = structuredClone(output.context);
     if (
       buildSearchInput(next, { messages: all }).status === "invalid" ||
       next.category !== context.category
@@ -76,6 +76,15 @@ export async function analyzeTurn({ context, messages, message }, gateway) {
       ["consideredActions", "proposed"],
       ["interpretations", "needs_confirmation"],
     ]) {
+      for (const previous of context.situation[field]) {
+        if (["confirmed", "rejected"].includes(previous.status)) {
+          const returned = next.situation[field].find(
+            (record) => record.id === previous.id,
+          );
+          if (JSON.stringify(previous) !== JSON.stringify(returned))
+            return failed("unapproved_confirmation");
+        }
+      }
       for (const record of next.situation[field]) {
         const previous = context.situation[field].find(
           (x) => x.id === record.id,
@@ -104,12 +113,23 @@ export async function analyzeTurn({ context, messages, message }, gateway) {
         )
       )
         return failed("invalid_question");
+      q.status = "asked";
       reply = q.question;
       kind = "question";
     } else {
       if (!next.situation.summary.trim()) return failed("empty_summary");
       reply = `제가 이해한 상황은 다음과 같아요.\n${next.situation.summary}\n이렇게 이해한 게 맞나요?`;
       kind = "confirm_summary";
+    }
+    // Keep asked/answered/withheld history even if the model omits it.
+    for (const previous of context.situation.openQuestions) {
+      if (previous.status === "unasked") continue;
+      const returned = next.situation.openQuestions.find(
+        (q) => q.id === previous.id,
+      );
+      if (!returned)
+        next.situation.openQuestions.push(structuredClone(previous));
+      else if (returned.status === "unasked") returned.status = previous.status;
     }
     return {
       status: "ok",

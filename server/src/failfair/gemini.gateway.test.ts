@@ -138,3 +138,19 @@ test("action suggestions remain catalog backed", async () => {
   const actions = await gateway(output()).suggestActions(input().situation);
   assert.equal(actions.length, 3);
 });
+
+test("unknown fields need no invented evidence and rooted evidence paths normalize", async () => {
+  const o = output();
+  o.situation.unknowns = ["마감"];
+  o.evidence[0].path = "situation.situation";
+  assert.equal(
+    (await gateway(o).analyze(input())).situation.unknowns[0],
+    "마감",
+  );
+});
+test("explicit summary request stops questions", async () => {
+  const i = input();
+  i.message += " 지금 정보로 정리해줘";
+  i.messages[0].content = i.message;
+  assert.equal((await gateway(output()).analyze(i)).readyToConfirm, true);
+});

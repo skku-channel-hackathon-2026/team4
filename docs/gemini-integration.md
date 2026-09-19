@@ -30,4 +30,4 @@ proposals/context-contract의 근거·해석 중심 0.2 JSON은 독립 제안이
 
 ## 검증
 
-서버 테스트 21개 통과, pnpm typecheck 및 pnpm build:cloudflare 통과. 외부 API 응답은 모의 처리했으며 실제 키를 사용한 Gemini 호출과 채널톡 종단간 검증은 아직 수행하지 않았다.
+서버 테스트 21개 통과, pnpm typecheck 및 pnpm build:cloudflare 통과. 외부 API 응답은 모의 처리했으며 실제 Gemini 대화 실행 결과는 [conversation-testing.md](conversation-testing.md)에 기록했다. 채널톡 종단간 검증은 아직 수행하지 않았다.
