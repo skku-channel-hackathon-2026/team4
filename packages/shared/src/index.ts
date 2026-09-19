@@ -1,4 +1,5 @@
 export * from "./failfair.js";
+export * from "./detect.js";
 export * from "./majors.js";
 export { DEMO_CASES } from "./cases.js";
 export {
@@ -6,3 +7,5 @@ export {
   type GoldenAction,
   type GoldenQuery,
 } from "./cases.golden.js";
+
+export * from "./student-context.js";
