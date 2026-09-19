@@ -23,11 +23,17 @@
       src="/src/main.tsx"
     ></script>
     <script>
-      var appearance = ChannelIOWam.getWamData('appearance')
-      if (appearance === 'dark') {
-        document.body.style.backgroundColor = '#464748'
-      } else {
-        document.body.style.backgroundColor = '#FFFFFF'
+      // 호스트가 ChannelIOWam을 아직 심지 않았을 수 있다(로컬 dev, 주입 지연).
+      // 여기서 예외가 나면 배경색이 끝까지 비어 화면이 깨져 보이므로 한 겹 감싼다.
+      try {
+        var wam = window.ChannelIOWam
+        var appearance = wam ? wam.getWamData('appearance') : null
+        var dark = appearance
+          ? appearance === 'dark'
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+        document.body.style.backgroundColor = dark ? '#1D1A18' : '#D7D1CB'
+      } catch (error) {
+        document.body.style.backgroundColor = '#D7D1CB'
       }
     </script>
   </body>
