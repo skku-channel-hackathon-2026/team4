@@ -113,7 +113,10 @@ export class GeminiGateway implements ModelGateway {
     private readonly apiKey: string,
     private readonly actionGateway: ModelGateway,
     private readonly model = "gemini-3.1-flash-lite",
-    private readonly request: typeof fetch = fetch,
+    // fetch를 그대로 저장하면 this.request(...) 호출 시 this가 인스턴스가 되어
+    // Cloudflare Workers에서 "Illegal invocation"이 난다(Node는 관대함). 반드시 감싸서 저장한다.
+    private readonly request: typeof fetch = (input, init) =>
+      fetch(input, init),
   ) {
     if (!apiKey.trim() || !GEMINI_MODEL_PATTERN.test(model))
       throw new Error("Invalid Gemini configuration");
