@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "0.1-draft",
+  "category": "grades",
+  "situation": {
+    "summary": "",
+    "facts": [],
+    "goal": {
+      "status": "unknown",
+      "text": null,
+      "evidence": []
+    },
+    "constraints": [],
+    "attemptedActions": {
+      "status": "unknown",
+      "items": []
+    },
+    "consideredActions": [],
+    "interpretations": [],
+    "openQuestions": []
+  }
+}
