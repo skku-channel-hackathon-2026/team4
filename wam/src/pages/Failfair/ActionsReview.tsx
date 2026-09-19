@@ -25,11 +25,9 @@ interface ActionsReviewPageProps {
 }
 
 function tagFor(category: Category, label: string): string | undefined {
-  return ACTION_TAGS[category].find(
-    (action) =>
-      action.label === label ||
-      action.keywords.some((keyword) => label.includes(keyword))
-  )?.tag
+  // A custom sentence may negate a keyword. Only an exact managed label maps
+  // automatically; ask the student once before treating it as an unsupported action.
+  return ACTION_TAGS[category].find((action) => action.label === label)?.tag
 }
 
 /** v2 §3.1 4단계: 내가 말한 행동과 제안 행동을 구분해 2~3개 확인. */
@@ -42,7 +40,13 @@ function ActionsReviewPage({
 }: ActionsReviewPageProps) {
   const [list, setList] = useState<ActionCandidate[]>(actions)
   const [custom, setCustom] = useState('')
+  const [unsupportedConfirmed, setUnsupportedConfirmed] = useState<Set<string>>(
+    new Set()
+  )
   const confirmed = list.filter((action) => action.confirmed)
+  const needsMeaning = confirmed.some(
+    (action) => !action.actionTag && !unsupportedConfirmed.has(action.id)
+  )
 
   const toggle = (id: string) =>
     setList((current) =>
@@ -115,14 +119,54 @@ function ActionsReviewPage({
               </Badge>
             </HStack>
             {!action.actionTag && (
-              <Text
-                as="p"
-                typo="12"
-                color="text-neutral-lighter"
-              >
-                아직 사례 태그와 연결되지 않은 행동이에요. 사례가 없을 수
-                있어요.
-              </Text>
+              <VStack spacing={6}>
+                <Text
+                  as="p"
+                  typo="12"
+                  color="text-neutral-lighter"
+                >
+                  이 행동은 어떤 의미인가요? 한 번 확인한 뒤 사례를 찾을게요.
+                </Text>
+                <select
+                  aria-label={`${action.label} 행동 의미`}
+                  value=""
+                  onChange={(event) => {
+                    const tag = event.target.value
+                    if (tag)
+                      setList((current) =>
+                        current.map((a) =>
+                          a.id === action.id ? { ...a, actionTag: tag } : a
+                        )
+                      )
+                  }}
+                >
+                  <option value="">의미 선택</option>
+                  {ACTION_TAGS[category].map((tag) => (
+                    <option
+                      key={tag.tag}
+                      value={tag.tag}
+                    >
+                      {tag.label}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="s"
+                  variant="ghost"
+                  semantic="secondary"
+                  label={
+                    unsupportedConfirmed.has(action.id)
+                      ? '미지원 행동으로 확인했어요'
+                      : '어느 것도 아니에요 · 미지원으로 진행'
+                  }
+                  disabled={unsupportedConfirmed.has(action.id)}
+                  onClick={() =>
+                    setUnsupportedConfirmed(
+                      (current) => new Set([...current, action.id])
+                    )
+                  }
+                />
+              </VStack>
             )}
           </div>
         ))}
@@ -195,7 +239,12 @@ function ActionsReviewPage({
           semantic="primary"
           label={`선배 사례 비교하기 (${confirmed.length})`}
           loading={busy}
-          disabled={busy || confirmed.length === 0 || confirmed.length > 3}
+          disabled={
+            busy ||
+            needsMeaning ||
+            confirmed.length === 0 ||
+            confirmed.length > 3
+          }
           onClick={() => onCompare(confirmed)}
         />
       </HStack>

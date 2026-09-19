@@ -5,8 +5,8 @@ import {
   type ActionCandidate,
 } from "@tutorial/shared";
 import {
-  matchActions,
-  rankCases,
+  matchActions as matchWithSource,
+  rankCases as rankWithSource,
   MATCH_WEIGHTS,
 } from "../retrieval.service.js";
 
@@ -51,3 +51,20 @@ await writeFile(
 console.log(
   `Wrote ${results.length} comparisons to evaluation-results/matching-report.json`,
 );
+
+function rankCases(...args: Parameters<typeof rankWithSource>) {
+  return rankWithSource(
+    args[0],
+    args[1],
+    args[2],
+    args[3] ?? { source: "demo" },
+  );
+}
+function matchActions(...args: Parameters<typeof matchWithSource>) {
+  return matchWithSource(
+    args[0],
+    args[1],
+    args[2],
+    args[3] ?? { source: "demo" },
+  );
+}

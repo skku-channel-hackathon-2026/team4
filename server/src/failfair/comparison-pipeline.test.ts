@@ -12,6 +12,7 @@ import { createTestDatabase } from "../test-database.js";
 import { SessionService } from "./session.service.js";
 import { D1CaseRepository } from "./case.repository.js";
 
+process.env.FAILFAIR_CASE_SOURCE = "demo";
 process.env.APP_ID = "comparison-pipeline-test";
 process.env.APP_SECRET = "test-only-secret";
 process.env.SIGNING_KEY = "11".repeat(32);
@@ -213,6 +214,54 @@ test("hidden cases and absent tools are unavailable after comparison", async () 
       functions.getCase(context(), {
         sessionId: session.id,
         caseId: source.id,
+      }),
+      /Case not found/,
+    );
+  });
+});
+
+test("alternative evidence can open its own receipt and record feedback in the same source mode", async () => {
+  await withDatabase(createTestDatabase(), async () => {
+    const { functions, session, source, cases } = await setup();
+    const other = {
+      ...source,
+      id: "alternative-case",
+      receipt: { ...source.receipt, status: "ongoing" as const },
+      outcome: { ...source.outcome, shortTerm: "과제는 아직 미완성" },
+    };
+    await cases.save(other);
+    const comparison = await functions.compare(context(), {
+      sessionId: session.id,
+      requestId: "alternatives",
+      expectedRevision: 1,
+      actions: [candidate("one")],
+    });
+    const alt = comparison.results[0].alternatives?.[0];
+    assert.ok(alt?.caseId);
+    assert.ok(alt.id.endsWith("-r2"));
+    const opened = await functions.getCase(context(), {
+      sessionId: session.id,
+      caseId: alt.caseId,
+    });
+    assert.equal(opened.case.id, alt.caseId);
+    await functions.feedback(context(), {
+      sessionId: session.id,
+      requestId: "alt-copy",
+      resultId: alt.id,
+      event: "tool_copied",
+    });
+    const saved = await getDatabase()
+      .prepare("SELECT case_id FROM failfair_feedback WHERE request_id = ?")
+      .bind("alt-copy")
+      .first<{ case_id: string }>();
+    assert.equal(saved?.case_id, alt.caseId);
+    // Even if an approved case's source is changed after comparison, it cannot
+    // silently appear in the old demo comparison as real evidence.
+    await cases.save({ ...opened.case, sourceType: "real" });
+    await assert.rejects(
+      functions.getCase(context(), {
+        sessionId: session.id,
+        caseId: alt.caseId,
       }),
       /Case not found/,
     );

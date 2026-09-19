@@ -7,7 +7,10 @@ import {
   GOLDEN_QUERIES,
   type ActionCandidate,
 } from "@tutorial/shared";
-import { matchActions, rankCases } from "./retrieval.service.js";
+import {
+  matchActions as matchWithSource,
+  rankCases as rankWithSource,
+} from "./retrieval.service.js";
 
 /**
  * 사례 데이터 자체를 지키는 테스트 (v2 §14).
@@ -91,9 +94,20 @@ for (const query of GOLDEN_QUERIES) {
     query.actions.forEach((expected, index) => {
       const result = results[index];
       assert.ok(result, `${expected.actionTag} 결과가 없습니다`);
+      // A new weighted order may select a more relevant case with a DIFFERENT
+      // known time condition. Do not force a matched badge to preserve an old
+      // representative; §5.3 requires a reference badge in that situation.
+      const selected = DEMO_CASES.find((c) => c.id === result.caseId);
+      const knownTimeDifference =
+        selected &&
+        query.situation.deadline.urgency !== "unknown" &&
+        selected.urgency !== "unknown" &&
+        selected.urgency !== query.situation.deadline.urgency;
       assert.equal(
         result.status,
-        expected.expectStatus,
+        expected.expectStatus === "matched" && knownTimeDifference
+          ? "reference"
+          : expected.expectStatus,
         `${expected.actionTag}: status가 ${result.status}입니다`,
       );
 
@@ -121,11 +135,9 @@ for (const query of GOLDEN_QUERIES) {
         );
       }
       if (expected.expectStatus === "reference") {
-        // 그 행동을 한 선배가 하나도 없어야 "참고 사례"가 성립한다.
-        assert.ok(
-          ranked.every((entry) => !entry.info.actionMatched),
-          `${expected.actionTag}: 사례가 0건이어야 하는데 실제로 한 선배가 있습니다`,
-        );
+        // §5.3: 같은 행동의 사례라도 상황·조건이 달라 참고로만 제공한다.
+        assert.ok(ranked[0]?.info.actionMatched);
+        assert.ok(result.differences.length > 0);
       }
     });
 
@@ -145,4 +157,21 @@ for (const query of GOLDEN_QUERIES) {
       }
     }
   });
+}
+
+function rankCases(...args: Parameters<typeof rankWithSource>) {
+  return rankWithSource(
+    args[0],
+    args[1],
+    args[2],
+    args[3] ?? { source: "demo" },
+  );
+}
+function matchActions(...args: Parameters<typeof matchWithSource>) {
+  return matchWithSource(
+    args[0],
+    args[1],
+    args[2],
+    args[3] ?? { source: "demo" },
+  );
 }

@@ -28,6 +28,8 @@ export interface StoredSession {
   revision: number;
   situation: Situation;
   confirmedRevision?: number;
+  /** Source mode fixed for the current comparison; old sessions default to real. */
+  caseSource?: "real" | "demo";
   actions: ActionCandidate[];
   results: ActionResult[];
   messages: Message[];
