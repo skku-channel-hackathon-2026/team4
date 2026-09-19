@@ -64,6 +64,11 @@ export function installDevBridge() {
   )
 
   const cases: Case[] = [...DEMO_CASES]
+  let devModel: {
+    provider: 'gemini' | 'rule'
+    source: 'env' | 'record' | 'none'
+    model?: string
+  } = { provider: 'rule', source: 'none' }
   const sessions = new Map<string, SessionView & { asked: number }>()
   const QUESTIONS = [
     '언제까지 해결해야 하나요? 남은 시간이나 마감을 알려 주세요.',
@@ -327,6 +332,20 @@ export function installDevBridge() {
         result = { case: cases[index] }
         break
       }
+      case F.getModel:
+        result = devModel
+        break
+      case F.setModel:
+        devModel =
+          params.provider === 'gemini'
+            ? {
+                provider: 'gemini',
+                source: 'record',
+                model: String(params.model || 'gemini-3.1-flash-lite'),
+              }
+            : { provider: 'rule', source: 'none' }
+        result = devModel
+        break
       default:
         throw new Error(`dev bridge: unknown function ${name}`)
     }

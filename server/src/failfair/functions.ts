@@ -23,6 +23,8 @@ import {
   ReplyOutputSchema,
   ReviewCaseInputSchema,
   SessionViewSchema,
+  ModelStatusSchema,
+  SetModelInputSchema,
   StartInputSchema,
   StartOutputSchema,
   SubmitCaseOutputSchema,
@@ -51,12 +53,8 @@ import {
   newCaseId,
   type CaseRepository,
 } from "./case.repository.js";
-import {
-  createModelGateway,
-  firstPrompt,
-  summarizeSituation,
-  type ModelGateway,
-} from "./model-gateway.js";
+import { ModelGatewayResolver } from "./model-config.service.js";
+import { firstPrompt, summarizeSituation } from "./model-gateway.js";
 import { matchActions } from "./retrieval.service.js";
 import {
   SessionService,
@@ -118,7 +116,7 @@ export class CommandExtension {
 export class FailfairFunctions {
   private readonly sessions = new SessionService();
   private readonly cases: CaseRepository = new AppRecordsCaseRepository();
-  private readonly model: ModelGateway = createModelGateway();
+  private readonly models = new ModelGatewayResolver();
 
   // ---------------------------------------------------------------- 진입
 
@@ -212,7 +210,8 @@ export class FailfairFunctions {
           content: input.message,
           at: now,
         });
-        const analyzed = await this.model.analyze({
+        const model = await this.models.resolve();
+        const analyzed = await model.analyze({
           category: current.category,
           situation: current.situation,
           messages: current.messages,
@@ -278,7 +277,8 @@ export class FailfairFunctions {
       async (current) => {
         current.situation = normalizeSituation(input.situation);
         current.confirmedRevision = current.revision + 1;
-        current.actions = await this.model.suggestActions(current.situation);
+        const model = await this.models.resolve();
+        current.actions = await model.suggestActions(current.situation);
         current.results = [];
         current.state = "REVIEWING_ACTIONS";
         return {
@@ -393,6 +393,47 @@ export class FailfairFunctions {
   }
 
   // ---------------------------------------------------------------- 선배 입력·검수
+
+  // ---------------------------------------------------------------- 모델 설정
+
+  @Func(FAILFAIR_FUNCTIONS.getModel)
+  @Description("지금 어떤 모델 게이트웨이가 도는지 (값은 돌려주지 않음)")
+  @InputSchema(z.object({}))
+  @OutputSchema(ModelStatusSchema)
+  async getModel(
+    @Ctx() ctx: Context,
+  ): Promise<z.infer<typeof ModelStatusSchema>> {
+    requireOwner(ctx);
+    return this.models.describe();
+  }
+
+  @Func(FAILFAIR_FUNCTIONS.setModel)
+  @Description(
+    "환경 변수가 없을 때 Desk에서 Gemini를 켜거나 끈다. 운영진 비밀 변수가 있으면 그것이 우선",
+  )
+  @InputSchema(SetModelInputSchema)
+  @OutputSchema(ModelStatusSchema)
+  async setModel(
+    @Ctx() ctx: Context,
+    @Input() input: z.infer<typeof SetModelInputSchema>,
+  ): Promise<z.infer<typeof ModelStatusSchema>> {
+    const managerId = requireOwner(ctx);
+    if (input.provider === "gemini" && !input.apiKey) {
+      throw new FunctionCallError(
+        "API key is required to enable Gemini",
+        FunctionCallErrorCode.BadRequest,
+        { type: FAILFAIR_ERRORS.invalidInput },
+      );
+    }
+    await this.models.save({
+      provider: input.provider,
+      apiKey: input.provider === "gemini" ? input.apiKey : "",
+      model: input.model,
+      updatedAt: Date.now(),
+      byManagerId: managerId,
+    });
+    return this.models.describe();
+  }
 
   @Func(FAILFAIR_FUNCTIONS.submitCase)
   @Description("선배가 실패 사례를 등록한다. 검수 전에는 draft로 보관된다")

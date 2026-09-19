@@ -8,7 +8,7 @@ import {
 } from '@channel.io/app-sdk-wam-ui'
 import { useWamClose, useWamSize } from '@channel.io/app-sdk-wam'
 import { ChatBubbleAltIcon, FolderOffIcon } from '@channel.io/bezier-icons'
-import { Button, Text, VStack } from '@channel.io/bezier-react/beta'
+import { Button, HStack, Text, VStack } from '@channel.io/bezier-react/beta'
 import type {
   ActionCandidate,
   Case,
@@ -30,6 +30,7 @@ import ChatPage from './pages/Failfair/Chat'
 import ComparePage from './pages/Failfair/Compare'
 import SituationReviewPage from './pages/Failfair/SituationReview'
 import ReviewPage from './pages/Senior/Review'
+import ModelSettingsPage from './pages/Admin/ModelSettings'
 import SeniorInputPage from './pages/Senior/SeniorInput'
 import { resolveError, type FailfairError } from './utils/failfairError'
 
@@ -53,6 +54,7 @@ type Screen =
   | { kind: 'home' }
   | { kind: 'student'; step: StudentStep }
   | { kind: 'senior'; tab: 'input' | 'review' }
+  | { kind: 'admin' }
 
 const TITLES: Record<StudentStep, string> = {
   category: '어떤 고민이에요?',
@@ -452,6 +454,10 @@ function App() {
       )
       return
     }
+    if (screen.kind === 'admin') {
+      setScreen({ kind: 'home' })
+      return
+    }
     if (screen.kind !== 'student') return
     const previous: Partial<Record<StudentStep, Screen>> = {
       category: { kind: 'home' },
@@ -500,7 +506,9 @@ function App() {
         ? screen.tab === 'input'
           ? '선배: 실패 사례 남기기'
           : '사례 검수'
-        : TITLES[screen.step]
+        : screen.kind === 'admin'
+          ? '모델 설정'
+          : TITLES[screen.step]
 
   let body: JSX.Element
   if (dataError) {
@@ -585,6 +593,15 @@ function App() {
               등록한 사례는 검수를 거쳐 다른 학생에게 보여질 수 있어요.
             </Text>
           </button>
+          <HStack justify="end">
+            <Button
+              size="xs"
+              variant="ghost"
+              semantic="secondary"
+              label="모델 설정"
+              onClick={() => setScreen({ kind: 'admin' })}
+            />
+          </HStack>
         </VStack>
         <Text
           as="p"
@@ -594,6 +611,13 @@ function App() {
           어느 쪽이든 실명이나 상대 이름은 적지 않아도 돼요.
         </Text>
       </VStack>
+    )
+  } else if (screen.kind === 'admin') {
+    body = (
+      <ModelSettingsPage
+        getModel={api.getModel}
+        setModel={api.setModel}
+      />
     )
   } else if (screen.kind === 'senior') {
     body =

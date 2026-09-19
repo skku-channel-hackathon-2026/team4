@@ -8,6 +8,7 @@ import {
   type Category,
   type CompareOutput,
   type ConfirmSituationOutput,
+  type ModelStatus,
   type ReplyOutput,
   type SessionView,
   type Situation,
@@ -108,6 +109,13 @@ export interface FailfairApi {
   submitCase(input: CaseSubmission): Promise<{ case: Case }>
   listCases(status?: CaseStatus): Promise<{ cases: Case[] }>
   reviewCase(caseId: string, status: CaseStatus): Promise<{ case: Case }>
+  // 런타임 모델 설정
+  getModel(): Promise<ModelStatus>
+  setModel(input: {
+    provider: 'gemini' | 'rule'
+    apiKey?: string
+    model?: string
+  }): Promise<ModelStatus>
 }
 
 export function createFailfairApi(appId: string): FailfairApi {
@@ -160,6 +168,8 @@ export function createFailfairApi(appId: string): FailfairApi {
     listCases: (status) => call(appId, F.listCases, status ? { status } : {}),
     reviewCase: (caseId, status) =>
       call(appId, F.reviewCase, { caseId, status }),
+    getModel: () => call(appId, F.getModel, {}),
+    setModel: (input) => call(appId, F.setModel, { ...input }),
   }
 }
 
