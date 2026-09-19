@@ -28,6 +28,9 @@ export const FAILFAIR_FUNCTIONS = {
   sosRequest: "failfair.sosRequest",
   sosList: "failfair.sosList",
   sosRespond: "failfair.sosRespond",
+  // 런타임 모델 설정 (운영진 없이 Gemini 켜고 끄기)
+  getModel: "failfair.getModel",
+  setModel: "failfair.setModel",
 } as const;
 
 /** UI가 분기 처리할 수 있는 오류 코드 (FunctionCallError의 type) */
@@ -606,4 +609,24 @@ export const SosRespondInputSchema = z.object({
 export const SosRespondOutputSchema = z.object({
   request: SosRequestSchema,
   notified: z.boolean(),
+});
+
+// ---------------------------------------------------------------------------
+// 런타임 모델 설정. 환경 변수가 없을 때 Desk에서 매니저가 Gemini를 켜고 끈다.
+// 값은 서버에만 저장되고 화면으로 돌려주지 않는다.
+// ---------------------------------------------------------------------------
+
+export const ModelStatusSchema = z.object({
+  provider: z.enum(["gemini", "rule"]),
+  /** env: 운영진 비밀 변수, record: Desk에서 저장한 값, none: 아무것도 없음(rule) */
+  source: z.enum(["env", "record", "none"]),
+  model: z.string().optional(),
+  warning: z.string().optional(),
+});
+export type ModelStatus = z.infer<typeof ModelStatusSchema>;
+
+export const SetModelInputSchema = z.object({
+  provider: z.enum(["gemini", "rule"]),
+  apiKey: z.string().trim().max(200).default(""),
+  model: z.string().trim().max(60).default("gemini-3.1-flash-lite"),
 });
