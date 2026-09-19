@@ -50,7 +50,12 @@ export interface ModelGateway {
   suggestActions(situation: Situation): Promise<ActionCandidate[]>;
 }
 
-const MAX_QUESTIONS = 3;
+/**
+ * 추가 질문은 한 번뿐이다. 상황 한 줄과 대략의 마감이면 사례를 찾기에 충분하고,
+ * 진행 상황·고려 중인 행동은 말해 주면 쓰고 아니면 다음 단계의 칩에서 고른다.
+ * 꼬리질문이 이어지면 설문지처럼 읽혀 학생이 중간에 나간다.
+ */
+const MAX_QUESTIONS = 1;
 const SKIP_PATTERN = /모르겠|말하고 싶지 않|건너|스킵|패스|잘 몰라|글쎄/;
 
 function dedupe(values: string[]): string[] {
@@ -69,7 +74,7 @@ const FIELD_LABELS: Record<PendingField, string> = {
 function questionFor(category: Category, field: PendingField): string {
   switch (field) {
     case "deadline":
-      return "언제까지 해결해야 해요? 남은 시간이나 마감을 편하게 말해 주세요.";
+      return "정확하지 않아도 되고 모르면 모른다고 해도 되는데, 대략 언제까지 해결해야 해요?";
     case "progress":
       if (category === "team_project")
         return "지금까지 된 건 어디까지고, 남은 건 뭐예요?";
@@ -192,23 +197,14 @@ export class RuleBasedGateway implements ModelGateway {
       }
     }
 
+    // 묻는 건 마감 하나뿐이다. 진행 상황·고려 중인 행동은 비어 있어도 묻지 않고
+    // 미확인으로도 남기지 않는다. 학생이 말하지 않은 걸 결과에서 탓하지 않기 위해서다.
     const missing: PendingField[] = [];
     if (
       !situation.deadline.raw &&
       !situation.unknowns.includes(FIELD_LABELS.deadline)
     )
       missing.push("deadline");
-    if (
-      !situation.progress &&
-      !situation.unknowns.includes(FIELD_LABELS.progress)
-    )
-      missing.push("progress");
-    if (
-      situation.consideredActions.length === 0 &&
-      !situation.unknowns.includes(FIELD_LABELS.consideredActions)
-    ) {
-      missing.push("consideredActions");
-    }
 
     const nextField = missing[0];
     if (nextField && input.questionCount < MAX_QUESTIONS) {
@@ -271,13 +267,17 @@ export function summarizeSituation(situation: Situation): string {
   const deadline = situation.deadline.raw
     ? `${situation.deadline.raw} (${URGENCY_LABELS[situation.deadline.urgency]})`
     : "";
+  // 상황과 마감만 항상 보여 준다. 나머지는 학생이 말한 것만 적는다.
+  // 빈 줄이 "아직 못 들었어요"로 줄줄이 붙으면 물어보지도 않은 걸 요구하는 것처럼 읽힌다.
+  const optional = (label: string, value: string) =>
+    value ? line(label, value) : "";
   return [
     "제가 이해한 걸 정리해 볼게요.",
     line("상황", situation.situation),
     line("마감", deadline),
-    line("진행", situation.progress),
-    line("이미 한 것", situation.attemptedActions.join(", ")),
-    line("고려 중인 행동", situation.consideredActions.join(", ")),
+    optional("진행", situation.progress),
+    optional("이미 한 것", situation.attemptedActions.join(", ")),
+    optional("고려 중인 행동", situation.consideredActions.join(", ")),
     situation.unknowns.length > 0
       ? `• 아직 모르는 것: ${situation.unknowns.join(", ")}`
       : "",

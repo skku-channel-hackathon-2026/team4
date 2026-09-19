@@ -360,20 +360,20 @@ function Row({
         className="ff-bubble-text"
         color={value ? undefined : 'text-neutral-lighter'}
       >
-        {value || '없음'}
+        {value || '비워 둠'}
       </Text>
       <Button
         size="xs"
         variant="ghost"
         semantic="secondary"
-        label="고치기"
+        label={value ? '고치기' : '적기'}
         onClick={() => onEdit(step)}
       />
     </div>
   )
 }
 
-/** 정리된 사례 카드. 제목만 바로 고치고, 나머지는 「고치기」로 다시 묻는다. */
+/** 정리된 사례 카드. 제목만 바로 고치고, 나머지는 「고치기」·「적기」로 다시 묻는다. 안 물어본 항목은 비워 둬도 된다. */
 function Preview({
   draft,
   busy,

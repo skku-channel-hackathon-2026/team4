@@ -406,6 +406,17 @@ test("fields filled at student confirmation no longer appear as missing", () => 
   });
   assert.deepEqual(unknowns, ["교수님 답장 여부"]);
 });
+
+test("unasked progress and goal are not counted as missing; only the deadline is", () => {
+  const unknowns = unknownsOf({
+    ...situation,
+    progress: "",
+    goal: "",
+    deadline: { raw: "", urgency: "unknown" },
+    unknowns: [],
+  });
+  assert.deepEqual(unknowns, ["마감·남은 시간"]);
+});
 test("known time differences are references, unknown time is not a conflict", () => {
   const c = { ...DEMO_CASES[0], urgency: "later" as const };
   assert.equal(
