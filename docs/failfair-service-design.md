@@ -14,12 +14,35 @@
 
 ## 파일과 담당 (v2 §11)
 
-| 담당        | 파일                                                                                                                                                                       | 현재 상태                                                                           |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| A 프런트    | `wam/src/pages/Failfair/*`, `wam/src/pages/Senior/*`, `wam/src/components/failfair/*`, `wam/src/hooks/useFailfair*.ts`, `wam/src/index.css`                                | 6단계 화면 전부 있음. 다듬기·모바일 폭·오류 상태 보강                               |
-| B 백엔드    | `packages/shared/src/failfair.ts`, `server/src/failfair/functions.ts`, `session.service.ts`, `case.repository.ts`, `records.ts`, `cloudflare/migrations/0002_failfair.sql` | Function 12개 동작. 저장은 `app_records` JSON. D1 테이블로 이전은 제안 상태         |
-| C 대화·검색 | `server/src/failfair/model-gateway.ts`, `retrieval.service.ts`                                                                                                             | 규칙 기반 게이트웨이와 점수 매칭. LLM 게이트웨이는 `createModelGateway`에 끼우면 됨 |
-| D 콘텐츠·QA | `packages/shared/src/cases.ts`, `docs/`, `scripts/smoke-*.mjs`                                                                                                             | 가상 사례 5개. 실제 사례는 선배 입력 화면으로 등록 후 승인                          |
+| 담당        | 파일                                                                                                                                                                                                                      | 현재 상태                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| A 프런트    | `wam/src/pages/Failfair/*`, `wam/src/pages/Senior/*`, `wam/src/components/failfair/*`, `wam/src/hooks/useFailfair*.ts`, `wam/src/index.css`                                                                               | 6단계 화면 전부 있음. 다듬기·모바일 폭·오류 상태 보강                                |
+| B 백엔드    | `packages/shared/src/failfair.ts`, `server/src/failfair/functions.ts`, `session.service.ts`, `case.repository.ts`, `sos.service.ts`, `feedback.store.ts`, `records.ts`, `cloudflare/migrations/0002_failfair_storage.sql` | Function 17개 동작. 사례·세션·SOS·피드백은 D1 전용 테이블, 모델 설정만 `app_records` |
+| C 대화·검색 | `server/src/failfair/model-gateway.ts`, `retrieval.service.ts`                                                                                                                                                            | 규칙 기반 게이트웨이와 점수 매칭. LLM 게이트웨이는 `createModelGateway`에 끼우면 됨  |
+| D 콘텐츠·QA | `packages/shared/src/cases.ts`, `docs/`, `scripts/smoke-*.mjs`                                                                                                                                                            | 가상 사례 5개. 실제 사례는 선배 입력 화면으로 등록 후 승인                           |
+
+## 저장소: D1 전용 테이블
+
+`cloudflare/migrations/0002_failfair_storage.sql`. 한 행 = 한 개체이고, 필터·정렬·잠금에 쓰는 값만 컬럼이며 원문은 공유 Zod 스키마로 검증한 JSON(`body_json`)이다.
+번들의 가상 사례 20건은 DB에 넣지 않고 읽을 때 합친다. 같은 id의 행이 DB에 있으면 그쪽이 이긴다 (가상 사례를 숨기면 그렇게 된다).
+
+| 테이블              | 한 행               | 동시성 규칙                                                                                        |
+| ------------------- | ------------------- | -------------------------------------------------------------------------------------------------- |
+| `failfair_cases`    | 사례 (CaseSchema)   | id로 upsert. 두 선배가 동시에 등록해도 둘 다 남는다                                                |
+| `failfair_sessions` | 학생 대화 세션 통째 | `UPDATE ... WHERE revision = ?`. 0행이면 `STALE_SESSION`. 메모리 검사와 별개로 DB가 한 쪽만 받는다 |
+| `failfair_requests` | 변경 요청의 응답    | `(session_id, request_id)` 기본키. 같은 requestId 재전송은 저장된 응답을 그대로 돌려준다           |
+| `failfair_feedback` | 도움 됨·도구 복사   | `request_id` 기본키. 같은 클릭은 한 번만 쌓이고 `case_id`로 사례별 집계가 된다                     |
+| `failfair_sos`      | SOS 요청            | 아래 "저장은 요청마다 한 행"                                                                       |
+
+`app_records`에는 행 하나로 끝나는 것만 남는다: 모델 설정 `failfair:model`, 사례 이전 표식 `failfair:cases:migrated`.
+옛 `failfair:cases` 배열은 배포 뒤 첫 읽기 때 한 번 표로 옮긴다 (`INSERT OR IGNORE`, 표식이 남으면 다시 하지 않는다).
+단위 테스트의 SQLite 대역(`server/src/test-database.ts`)이 이 마이그레이션 파일을 그대로 실행하므로, 스키마와 코드가 어긋나면 운영이 아니라 테스트에서 먼저 깨진다.
+
+로컬에 옛 `0002_failfair.sql`을 적용해 둔 경우 초기화한다:
+
+```sh
+rm -rf .wrangler/state && corepack pnpm db:migrate:local
+```
 
 ## SOS: 새내기 → 실제 선배
 
@@ -45,11 +68,11 @@ SOS는 **그룹 채팅에서 연 경우에만** 보낼 수 있다. 수락한 뒤
 
 ### 저장은 요청마다 한 행
 
-`app_records`에 `failfair:sos:{채널}:{사례}:{새내기}` 한 자리당 한 행이다. 전체 목록을 한 키에 배열로 두면
+`failfair_sos`에 요청 하나가 한 행이다. 전체 목록을 한 키에 배열로 두면
 "읽고 → 고치고 → 통째로 덮어쓰는" 사이에 남의 요청이나 이미 끝난 수락이 사라진다 (실제로 재현됐다).
 
-- 새 요청: `INSERT ... ON CONFLICT DO NOTHING`. 자리를 차지한 쪽만 `created=true`가 되어, 중복 방지를 DB가 보장한다. 거절당한 자리는 새 요청이 대신한다.
-- 수락·거절: `UPDATE ... WHERE json_extract(value_json, '$.status') = 'pending'`. 실제로 바뀐 쪽만 `changed=true`가 되고 봇 알림도 그때만 나간다.
+- 새 요청: `INSERT OR IGNORE`. (채널·사례·새내기)당 대기 중 요청은 부분 유니크 인덱스로 하나뿐이라, 자리를 차지한 쪽만 `created=true`가 된다. 거절·수락된 요청은 이력으로 남고 새 요청을 다시 넣을 수 있다. 화면은 사례별로 최신 요청을 고른다.
+- 수락·거절: `UPDATE ... WHERE status = 'pending'`. 실제로 바뀐 쪽만 `changed=true`가 되고 봇 알림도 그때만 나간다.
 - 진 쪽은 저장된 최신 상태를 돌려받아, 화면이 자기가 누른 답을 잘못 보여 주지 않는다.
 
 봇 알림은 `writeGroupMessage` 권한이 있는 그룹에서만 된다. 실패해도 요청은 남고, 선배가 앱을 열면 보인다.
@@ -57,8 +80,7 @@ SOS는 **그룹 채팅에서 연 경우에만** 보낼 수 있다. 수락한 뒤
 ## 아직 없는 것
 
 - 실제 모델 연결. `MODEL_PROVIDER`, `MODEL_API_KEY`가 없으면 규칙 기반으로 동작한다. 키는 운영진이 Workers 비밀 변수로 넣어야 한다.
-- D1 전용 테이블. `0002_failfair.sql`은 제안이며 코드가 아직 쓰지 않는다. 원격 적용은 운영진 요청 후.
-- 세션 만료·삭제, 대화 원문 보관 정책.
+- 세션 만료·삭제, 대화 원문 보관 정책. 표에 `updated_at`이 있어 지울 수는 있지만 아직 아무도 지우지 않는다.
 - 일반 학생용 공개 진입점. 지금은 Desk 계정으로만 연다.
 
 ## 실행과 검사
@@ -77,4 +99,4 @@ main 머지 전에 마지막 줄이 전부 통과해야 CI가 배포한다.
 
 1. 커맨드 등록 갱신. `/tutorial` → `/failfair` (표시명 망선박). 갱신 전에도 `/tutorial`은 새 화면을 연다.
 2. (모델 연결 시) `MODEL_PROVIDER`, `MODEL_API_KEY` 비밀 변수.
-3. (D1 이전 시) `0002_failfair.sql` 원격 적용.
+3. `0002_failfair_storage.sql` 원격 적용. **적용이 끝난 뒤에** 의존 코드를 main에 합친다. 표만 추가하므로 코드를 되돌려도 옛 경로가 그대로 돈다.

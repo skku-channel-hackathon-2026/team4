@@ -59,12 +59,12 @@ import {
   createTutorialTargetToken,
   verifyChatTarget,
 } from "../target-token.js";
-import { getRecord, setRecord } from "../records.js";
 import {
-  AppRecordsCaseRepository,
+  D1CaseRepository,
   newCaseId,
   type CaseRepository,
 } from "./case.repository.js";
+import { recordFeedback } from "./feedback.store.js";
 import { ModelGatewayResolver } from "./model-config.service.js";
 import { firstPrompt, summarizeSituation } from "./model-gateway.js";
 import {
@@ -86,8 +86,6 @@ import {
   requireState,
   toView,
 } from "./session.service.js";
-
-const RECORD_FEEDBACK = "failfair:feedback";
 
 /** SOS 대상 표식의 수명. 한 번 연 WAM에서 상담을 마치기에 넉넉하고, 오래 새지 않을 정도. */
 const CHAT_TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
@@ -141,7 +139,7 @@ export class CommandExtension {
 @Injectable()
 export class FailfairFunctions {
   private readonly sessions = new SessionService();
-  private readonly cases: CaseRepository = new AppRecordsCaseRepository();
+  private readonly cases: CaseRepository = new D1CaseRepository();
   private readonly models = new ModelGatewayResolver();
   private readonly sos = new SosService();
   private readonly notifier: GroupNotifier;
@@ -439,18 +437,17 @@ export class FailfairFunctions {
     @Ctx() ctx: Context,
     @Input() input: z.infer<typeof FeedbackInputSchema>,
   ): Promise<z.infer<typeof OkOutputSchema>> {
-    await this.sessions.load(ctx, input.sessionId);
-    const stored = await getRecord<unknown[]>(RECORD_FEEDBACK);
-    const list = Array.isArray(stored) ? stored : [];
-    if (
-      !list.some(
-        (entry) =>
-          (entry as { requestId?: string }).requestId === input.requestId,
-      )
-    ) {
-      list.push({ ...input, at: Date.now() });
-      await setRecord(RECORD_FEEDBACK, list);
-    }
+    const session = await this.sessions.load(ctx, input.sessionId);
+    // 결과 카드에 연결된 사례를 같이 남겨 두면 사례별 "도움 됨"을 셀 수 있다. 재전송은 한 번만 쌓인다.
+    const result = session.results.find((entry) => entry.id === input.resultId);
+    await recordFeedback({
+      requestId: input.requestId,
+      sessionId: session.id,
+      resultId: input.resultId,
+      caseId: result?.caseId,
+      event: input.event,
+      at: Date.now(),
+    });
     return { ok: true };
   }
 

@@ -5,7 +5,7 @@ import { withDatabase } from "../database.js";
 import { createTestDatabase } from "../test-database.js";
 import {
   SosService,
-  appRecordsSosStore,
+  d1SosStore,
   isContactable,
   sosRequestedText,
 } from "./sos.service.js";
@@ -17,7 +17,7 @@ import {
  */
 const inDatabase = <T>(callback: (service: SosService) => Promise<T>) =>
   withDatabase(createTestDatabase(), () =>
-    callback(new SosService(appRecordsSosStore)),
+    callback(new SosService(d1SosStore)),
   );
 
 const realCase = (overrides: Partial<Case> = {}): Case => ({
@@ -106,9 +106,16 @@ test("거절당한 뒤에는 같은 선배에게 새 요청을 보낼 수 있다
     assert.equal(retry.created, true);
     assert.equal(retry.request.status, "pending");
     assert.equal(retry.request.chatId, "g2");
+    // 거절 이력은 남고 새 요청이 맨 앞에 온다. 화면은 사례별로 첫 번째(최신)를 고른다.
     const mine = await service.listFor("c1", "student-1", "student");
-    assert.equal(mine.length, 1, "자리는 하나, 최신 요청으로 대체된다");
+    assert.equal(mine.length, 2);
     assert.equal(mine[0]!.message, "한 번만 더 부탁드려요");
+    assert.equal(mine[0]!.status, "pending");
+    assert.equal(mine[1]!.status, "declined");
+    // 대기 중인 요청이 생겼으니 또 보내면 그것을 돌려준다.
+    const third = await service.request(ask({ message: "세 번째" }), 4000);
+    assert.equal(third.created, false);
+    assert.equal(third.request.id, retry.request.id);
   });
 });
 
