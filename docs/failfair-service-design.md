@@ -33,6 +33,7 @@
 ```sh
 corepack pnpm install --frozen-lockfile
 corepack pnpm dev:wam            # 화면만, 가짜 bridge (wam/src/devBridge.ts). ?mode=senior 로 선배 화면
+corepack pnpm dev:wam:server     # 화면 + 로컬 Worker. 아래 dev:cloudflare 를 먼저 띄운다. 실제 서버·Gemini 대화 (주소에 ?bridge=server 도 됨)
 corepack pnpm build:cloudflare && corepack pnpm dev:cloudflare   # 서버 + D1
 corepack pnpm typecheck && corepack pnpm test && corepack pnpm lint && corepack pnpm format:check
 ```
