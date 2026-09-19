@@ -1,4 +1,5 @@
 export * from "./failfair.js";
+export * from "./detect.js";
 export * from "./majors.js";
 export { DEMO_CASES } from "./cases.js";
 export {

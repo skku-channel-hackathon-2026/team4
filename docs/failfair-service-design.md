@@ -6,9 +6,9 @@
 
 두 흐름의 뼈대가 서버·화면·테스트까지 붙어 있다.
 
-**학생 흐름** `/망선박` → 카테고리 선택 → 자유 입력 대화 (규칙 기반 추가 질문 최대 3개) → 상황 확인·수정 → 행동 후보 확인 (내가 말한 행동 + 제안, 직접 추가 가능) → 행동별 선배 사례 비교 카드 → 사례 상세·도구 복사 → 도움 됨.
+**학생 흐름** `/망선박` → 카테고리 선택 → 한 대화 안에서: 자유 입력 (규칙 기반 추가 질문 최대 3개, 질문은 방금 말한 것을 받아 준 뒤 하나만 묻는다) → 서버의 정리 말풍선 아래 「맞아요」로 확정 (다르면 그냥 이어서 말하면 재분석, 항목별로 고치려면 「직접 고칠게요」 폼) → 행동 후보를 칩으로 골라 비교 (내가 말한 행동 + 제안, 직접 추가 가능) → 행동별 선배 사례 비교 카드 → 사례 상세·도구 복사 → 도움 됨. 확인·선택 단계는 별도 화면이 아니라 대화 로그 안의 말풍선이다 (`wam/src/pages/Failfair/Chat.tsx`, `components/failfair/ActionPicker.tsx`).
 
-**선배 흐름** `/망선박 선배` → 사례 입력 폼 (상황, 행동 순서 + 태그, 결과, 복구 영수증, 조건, 키워드, 도구) → `draft` 저장 → 검수 화면에서 승인·숨김. 승인된 사례만 학생 결과에 나온다.
+**선배 흐름** `/망선박 선배` → 카테고리 선택 → 인터뷰 (봇이 "무슨 일이 있었나 → 뭘 했나 → 어떻게 됐나 → 뭘 잃었나 → 다음 사람에게 남길 조건·도구" 순으로 하나씩 묻고, 문제 유형·행동 태그·상태·SOS 허용은 칩으로 답한다. 제목은 상황 첫 문장, 첫 행동은 행동 1번에서 만든다) → 정리 카드 미리보기 (제목 수정, 항목별 「고치기」) → `draft` 저장 → 검수 화면에서 승인·숨김. 승인된 사례만 학생 결과에 나온다. 대본은 `wam/src/utils/seniorInterview.ts`, 키워드 추정은 `packages/shared/src/detect.ts` (서버 규칙 게이트웨이와 같은 함수).
 
 세션은 소유자(채널 + 매니저)만 읽을 수 있고, 변경 요청은 `requestId`로 중복 재생, `expectedRevision`으로 오래된 버전을 거절한다. 시연 사례 5개는 전부 `sourceType: "demo"`로 표시된다.
 
@@ -16,7 +16,7 @@
 
 | 담당        | 파일                                                                                                                                                                                                                      | 현재 상태                                                                            |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| A 프런트    | `wam/src/pages/Failfair/*`, `wam/src/pages/Senior/*`, `wam/src/components/failfair/*`, `wam/src/hooks/useFailfair*.ts`, `wam/src/index.css`                                                                               | 6단계 화면 전부 있음. 다듬기·모바일 폭·오류 상태 보강                                |
+| A 프런트    | `wam/src/pages/Failfair/*`, `wam/src/pages/Senior/*`, `wam/src/components/failfair/*`, `wam/src/utils/seniorInterview.ts`, `wam/src/hooks/useFailfair*.ts`, `wam/src/index.css`                                           | 학생은 대화 한 화면 + 비교·상세, 선배는 인터뷰. 다듬기·모바일 폭·오류 상태 보강      |
 | B 백엔드    | `packages/shared/src/failfair.ts`, `server/src/failfair/functions.ts`, `session.service.ts`, `case.repository.ts`, `sos.service.ts`, `feedback.store.ts`, `records.ts`, `cloudflare/migrations/0002_failfair_storage.sql` | Function 17개 동작. 사례·세션·SOS·피드백은 D1 전용 테이블, 모델 설정만 `app_records` |
 | C 대화·검색 | `server/src/failfair/model-gateway.ts`, `retrieval.service.ts`                                                                                                                                                            | 규칙 기반 게이트웨이와 점수 매칭. LLM 게이트웨이는 `createModelGateway`에 끼우면 됨  |
 | D 콘텐츠·QA | `packages/shared/src/cases.ts`, `docs/`, `scripts/smoke-*.mjs`                                                                                                                                                            | 가상 사례 5개. 실제 사례는 선배 입력 화면으로 등록 후 승인                           |

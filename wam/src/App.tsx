@@ -15,6 +15,7 @@ import type {
   CaseSubmission,
   Category,
   Major,
+  SessionState,
   SessionView,
   Situation,
   SosRequest,
@@ -25,7 +26,6 @@ import SosBox from './components/failfair/SosBox'
 import StepProgress from './components/failfair/StepProgress'
 import { newRequestId, useFailfairApi } from './hooks/useFailfairApi'
 import { useFailfairWamData } from './hooks/useFailfairWamData'
-import ActionsReviewPage from './pages/Failfair/ActionsReview'
 import CaseDetailPage from './pages/Failfair/CaseDetail'
 import CategoryPage from './pages/Failfair/Category'
 import ChatPage from './pages/Failfair/Chat'
@@ -57,8 +57,7 @@ const SKIP_TEXT = '남은 질문은 건너뛸게요'
 /** 서버 `MAX_QUESTIONS`와 같은 상한. 더 돌지 않도록 막는 안전장치다. */
 const MAX_SKIPS = 3
 
-type StudentStep =
-  'category' | 'chat' | 'situation' | 'actions' | 'compare' | 'case'
+type StudentStep = 'category' | 'chat' | 'situation' | 'compare' | 'case'
 type Screen =
   | { kind: 'home' }
   | { kind: 'student'; step: StudentStep }
@@ -68,18 +67,35 @@ type Screen =
 const TITLES: Record<StudentStep, string> = {
   category: '어떤 고민이에요?',
   chat: '고민 대화',
-  situation: '상황 확인',
-  actions: '행동 확인',
+  situation: '상황 직접 고치기',
   compare: '행동별 선배 사례',
   case: '사례 상세',
 }
 
+/**
+ * 대화 화면은 수집·상황 확인·행동 고르기를 한 화면에서 잇는다.
+ * 제목과 진행 표시는 세션 상태를 따라간다.
+ */
+const CHAT_TITLES: Record<SessionState, string> = {
+  COLLECTING: '고민 대화',
+  REVIEWING_SITUATION: '상황 확인',
+  REVIEWING_ACTIONS: '행동 고르기',
+  MATCHING: '행동 고르기',
+  RESULTS: '행동 다시 고르기',
+}
+
+const CHAT_STEP_INDEX: Record<SessionState, number> = {
+  COLLECTING: 2,
+  REVIEWING_SITUATION: 3,
+  REVIEWING_ACTIONS: 4,
+  MATCHING: 4,
+  RESULTS: 4,
+}
+
 /** 진행 표시에서 각 화면이 몇 번째 단계인지. 사례 상세는 비교와 같은 단계로 본다. */
-const STEP_INDEX: Record<StudentStep, number> = {
+const STEP_INDEX: Record<Exclude<StudentStep, 'chat'>, number> = {
   category: 1,
-  chat: 2,
   situation: 3,
-  actions: 4,
   compare: 5,
   case: 5,
 }
@@ -333,7 +349,7 @@ function App() {
     deliver(text, at)
   }
 
-  /** 남은 질문을 한 번에 건너뛰고 상황 확인으로 넘어간다. */
+  /** 남은 질문을 한 번에 건너뛰고 서버의 정리 말풍선을 받는다. */
   const skipRemaining = () => {
     if (!sessionRef.current) return
     // 회차마다 고정된 requestId. 재시도해도 같은 값을 써서, 서버가 이미 처리한
@@ -383,11 +399,9 @@ function App() {
         if (current.state !== 'COLLECTING') break
       }
       // 중간 건너뛰기 질문은 화면과 음성에 쌓지 않고 최종 답변만 반영한다.
+      // 정리 말풍선과 「맞아요」가 같은 대화 화면에 나오므로 화면은 옮기지 않는다.
       sessionRef.current = current
       setSession(current)
-      if (current.state !== 'COLLECTING') {
-        setScreen({ kind: 'student', step: 'situation' })
-      }
     }, '건너뛰지 못했어요.')
   }
 
@@ -411,7 +425,7 @@ function App() {
         actions: confirmed.actions,
         results: [],
       })
-      setScreen({ kind: 'student', step: 'actions' })
+      setScreen({ kind: 'student', step: 'chat' })
     }, '상황을 저장하지 못했어요.')
   }
 
@@ -559,12 +573,16 @@ function App() {
       return
     }
     if (screen.kind !== 'student') return
+    // 결과를 본 뒤 행동을 다시 고르러 대화로 돌아온 경우에는 결과로 되돌린다.
+    const revisiting =
+      session?.state === 'RESULTS' && (session?.results.length ?? 0) > 0
     const previous: Partial<Record<StudentStep, Screen>> = {
       category: { kind: 'home' },
-      chat: { kind: 'student', step: 'category' },
+      chat: revisiting
+        ? { kind: 'student', step: 'compare' }
+        : { kind: 'student', step: 'category' },
       situation: { kind: 'student', step: 'chat' },
-      actions: { kind: 'student', step: 'situation' },
-      compare: { kind: 'student', step: 'actions' },
+      compare: { kind: 'student', step: 'chat' },
       case: { kind: 'student', step: 'compare' },
     }
     setScreen(previous[screen.step] ?? { kind: 'home' })
@@ -610,7 +628,9 @@ function App() {
             : 'SOS 요청'
         : screen.kind === 'admin'
           ? '모델 설정'
-          : TITLES[screen.step]
+          : screen.step === 'chat' && session
+            ? CHAT_TITLES[session.state]
+            : TITLES[screen.step]
 
   let body: JSX.Element
   if (dataError) {
@@ -753,15 +773,25 @@ function App() {
       case 'chat':
         body = session ? (
           <ChatPage
+            category={session.category}
             messages={session.messages}
             state={session.state}
             situation={session.situation}
+            actions={session.actions}
+            hasResults={session.results.length > 0}
+            revision={session.revision}
             busy={busy}
             failedAts={failedAts}
             onSend={send}
             onResend={resend}
             onSkipRemaining={skipRemaining}
-            onReview={() => setScreen({ kind: 'student', step: 'situation' })}
+            onConfirmSituation={() =>
+              confirmSituation(situationWithMajor(session.situation))
+            }
+            onEditSituation={() =>
+              setScreen({ kind: 'student', step: 'situation' })
+            }
+            onCompare={compare}
           />
         ) : (
           sessionGone
@@ -780,20 +810,6 @@ function App() {
           sessionGone
         )
         break
-      case 'actions':
-        body = session ? (
-          <ActionsReviewPage
-            key={session.revision}
-            category={session.category}
-            actions={session.actions}
-            busy={busy}
-            onCompare={compare}
-            onBack={() => setScreen({ kind: 'student', step: 'situation' })}
-          />
-        ) : (
-          sessionGone
-        )
-        break
       case 'compare':
         body = session ? (
           <ComparePage
@@ -806,12 +822,8 @@ function App() {
             helpfulIds={helpfulIds}
             onOpenCase={openCase}
             onHelpful={helpful}
-            onEditActions={() =>
-              setScreen({ kind: 'student', step: 'actions' })
-            }
-            onEditSituation={() =>
-              setScreen({ kind: 'student', step: 'situation' })
-            }
+            onEditActions={() => setScreen({ kind: 'student', step: 'chat' })}
+            onEditSituation={() => setScreen({ kind: 'student', step: 'chat' })}
             onRestart={restart}
           />
         ) : (
@@ -899,7 +911,13 @@ function App() {
           }
         />
         {screen.kind === 'student' && (
-          <StepProgress current={STEP_INDEX[screen.step]} />
+          <StepProgress
+            current={
+              screen.step === 'chat'
+                ? CHAT_STEP_INDEX[session?.state ?? 'COLLECTING']
+                : STEP_INDEX[screen.step]
+            }
+          />
         )}
         <div
           className="ff-scroll"

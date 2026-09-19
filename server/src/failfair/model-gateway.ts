@@ -1,16 +1,26 @@
-import { explicitDurationUrgency } from "./urgency.js";
 import { GEMINI_MODEL_PATTERN, GeminiGateway } from "./gemini.gateway.js";
 import {
   ACTION_TAGS,
   CATEGORIES,
-  PROBLEM_TYPES,
   URGENCY_LABELS,
+  detectActionLabels,
+  detectProblemType,
+  detectUrgency,
+  extractDeadlineRaw,
   type ActionCandidate,
   type Category,
   type Message,
   type Situation,
-  type Urgency,
 } from "@tutorial/shared";
+
+// 키워드 추출은 packages/shared/src/detect.ts로 옮겼다 (선배 인터뷰 화면도 같은 규칙을 쓴다).
+// 기존 import 경로를 깨지 않도록 여기서 다시 내보낸다.
+export {
+  detectActionLabels,
+  detectProblemType,
+  detectUrgency,
+  extractDeadlineRaw,
+};
 import type { PendingField } from "./session.service.js";
 
 /**
@@ -43,56 +53,6 @@ export interface ModelGateway {
 const MAX_QUESTIONS = 3;
 const SKIP_PATTERN = /모르겠|말하고 싶지 않|건너|스킵|패스|잘 몰라|글쎄/;
 
-export function detectUrgency(text: string): Urgency {
-  const explicit = explicitDurationUrgency(text);
-  if (explicit) return explicit;
-  // Conflicting, negated, and qualified durations need semantic interpretation.
-  const durations = [
-    ...text.matchAll(/(?<![\d.])\d+(?:\.\d+)?\s*(?:시간|일|주)/g),
-  ];
-  if (durations.length) {
-    if (
-      durations.length !== 1 ||
-      /아니|않|인지|또는|이상|최소|최대|~|에서/.test(text)
-    )
-      return "unknown";
-    return explicitDurationUrgency(durations[0][0]) ?? "unknown";
-  }
-  if (/오늘|내일|시간 (남|뒤|후)|시간남|몇 시간|자정|당장|지금 바로/.test(text))
-    return "today";
-  if (/이번 주|일주일|며칠|이틀|사흘|주말|다음 주|3일|4일|5일/.test(text))
-    return "week";
-  if (/여유|다음 달|한 달|학기|방학|천천히/.test(text)) return "later";
-  return "unknown";
-}
-
-/** "8시간 남았고" 같은 명시적 표현을 먼저, 없으면 "내일" 같은 단어를 잡는다. */
-export function extractDeadlineRaw(text: string): string {
-  const explicit = text.match(/\d+\s*(시간|일|주|달)\s*(남|뒤|후|안)[^,.\s]*/);
-  if (explicit) return explicit[0];
-  const word = text.match(
-    /오늘|내일|모레|이번 주|다음 주|주말|이번 달|다음 달|자정/,
-  );
-  return word?.[0] ?? "";
-}
-
-export function detectActionLabels(category: Category, text: string): string[] {
-  return ACTION_TAGS[category]
-    .filter((action) =>
-      action.keywords.some((keyword) => text.includes(keyword)),
-    )
-    .map((action) => action.label);
-}
-
-export function detectProblemType(
-  category: Category,
-  text: string,
-): string | undefined {
-  return PROBLEM_TYPES[category].find((problem) =>
-    problem.keywords.some((keyword) => text.includes(keyword)),
-  )?.type;
-}
-
 function dedupe(values: string[]): string[] {
   return Array.from(
     new Set(values.map((value) => value.trim()).filter(Boolean)),
@@ -109,18 +69,52 @@ const FIELD_LABELS: Record<PendingField, string> = {
 function questionFor(category: Category, field: PendingField): string {
   switch (field) {
     case "deadline":
-      return "언제까지 해결해야 하나요? 남은 시간이나 마감을 알려 주세요. (예: 8시간 남음, 다음 주 월요일)";
+      return "언제까지 해결해야 해요? 남은 시간이나 마감을 편하게 말해 주세요.";
     case "progress":
       if (category === "team_project")
-        return "지금까지 끝난 작업과 남은 작업은 무엇인가요?";
+        return "지금까지 된 건 어디까지고, 남은 건 뭐예요?";
       if (category === "grades")
-        return "남은 평가는 무엇이고, 지금까지 어떤 방법으로 공부해 봤나요?";
-      return "맡은 역할은 무엇이고, 결정해야 하는 기한이 있나요?";
+        return "남은 평가는 뭐고, 지금까지는 어떻게 공부해 봤어요?";
+      return "맡은 역할은 뭐고, 언제까지 결정해야 해요?";
     case "consideredActions":
-      return "지금 고려하고 있는 행동이 있나요? 없으면 '모르겠어요'라고 답해도 돼요.";
+      return "지금 머릿속에 있는 선택지가 있어요? 없으면 없다고 해도 괜찮아요.";
     case "goal":
-      return "이 상황에서 가장 원하는 결과는 무엇인가요?";
+      return "이 상황에서 제일 바라는 결과는 뭐예요?";
   }
+}
+
+/**
+ * 학생이 방금 말한 것을 한 구절로 받아 준다. 필드 이름을 읊는 질문만 이어지면
+ * 설문지처럼 읽히기 때문이다. 이 턴에 새로 알게 된 것이 없으면 빈 문자열이다.
+ */
+export function acknowledge(before: Situation, after: Situation): string {
+  const parts: string[] = [];
+  if (!before.deadline.raw && after.deadline.raw) {
+    if (after.deadline.urgency === "today")
+      parts.push("시간이 정말 빠듯하네요.");
+    else if (after.deadline.urgency === "week")
+      parts.push("이번 주가 고비네요.");
+    else if (after.deadline.urgency === "later")
+      parts.push("다행히 시간은 조금 있네요.");
+  }
+  const newActions = after.consideredActions.filter(
+    (label) => !before.consideredActions.includes(label),
+  );
+  if (newActions.length === 1) {
+    parts.push(`${newActions[0]}를 생각하고 계시군요.`);
+  } else if (newActions.length > 1) {
+    parts.push(`${newActions.join(", ")} 사이에서 고민 중이시군요.`);
+  }
+  if (
+    !before.attemptedActions.includes("연락 시도") &&
+    after.attemptedActions.includes("연락 시도")
+  ) {
+    parts.push("연락은 이미 해 보셨고요.");
+  }
+  if (parts.length === 0 && !before.situation && after.situation) {
+    parts.push("무슨 일인지 알겠어요.");
+  }
+  return parts.join(" ");
 }
 
 /**
@@ -218,9 +212,11 @@ export class RuleBasedGateway implements ModelGateway {
 
     const nextField = missing[0];
     if (nextField && input.questionCount < MAX_QUESTIONS) {
+      const lead = skipped ? "" : acknowledge(input.situation, situation);
+      const question = questionFor(input.category, nextField);
       return {
         situation,
-        nextQuestion: questionFor(input.category, nextField),
+        nextQuestion: lead ? `${lead} ${question}` : question,
         pendingField: nextField,
         readyToConfirm: false,
       };
@@ -271,12 +267,12 @@ export class RuleBasedGateway implements ModelGateway {
 
 export function summarizeSituation(situation: Situation): string {
   const line = (label: string, value: string) =>
-    `• ${label}: ${value || "미확인"}`;
+    `• ${label}: ${value || "아직 못 들었어요"}`;
   const deadline = situation.deadline.raw
     ? `${situation.deadline.raw} (${URGENCY_LABELS[situation.deadline.urgency]})`
     : "";
   return [
-    "제가 이해한 상황이 맞는지 확인해 주세요.",
+    "제가 이해한 걸 정리해 볼게요.",
     line("상황", situation.situation),
     line("마감", deadline),
     line("진행", situation.progress),
@@ -285,7 +281,7 @@ export function summarizeSituation(situation: Situation): string {
     situation.unknowns.length > 0
       ? `• 아직 모르는 것: ${situation.unknowns.join(", ")}`
       : "",
-    "아래에서 고치거나 그대로 확인해 주세요.",
+    "맞으면 아래 「맞아요」를 눌러 주세요. 다르거나 더 말할 게 있으면 그냥 이어서 적어 주시면 돼요.",
   ]
     .filter(Boolean)
     .join("\n");

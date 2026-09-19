@@ -109,9 +109,9 @@ export async function installDevBridge(): Promise<void> {
   } = { provider: 'rule', source: 'none' }
   const sessions = new Map<string, SessionView & { asked: number }>()
   const QUESTIONS = [
-    '언제까지 해결해야 하나요? 남은 시간이나 마감을 알려 주세요.',
-    '지금까지 끝난 작업과 남은 작업은 무엇인가요?',
-    "지금 고려하고 있는 행동이 있나요? 없으면 '모르겠어요'라고 답해도 돼요.",
+    '무슨 일인지 알겠어요. 언제까지 해결해야 해요? 남은 시간이나 마감을 편하게 말해 주세요.',
+    '지금까지 된 건 어디까지고, 남은 건 뭐예요?',
+    '지금 머릿속에 있는 선택지가 있어요? 없으면 없다고 해도 괜찮아요.',
   ]
 
   const wait = () => new Promise((resolve) => window.setTimeout(resolve, 300))
@@ -130,12 +130,12 @@ export async function installDevBridge(): Promise<void> {
 
   const summarize = (s: Situation) =>
     [
-      '제가 이해한 상황이 맞는지 확인해 주세요.',
-      `• 상황: ${s.situation || '미확인'}`,
-      `• 마감: ${s.deadline.raw || '미확인'}`,
-      `• 진행: ${s.progress || '미확인'}`,
-      `• 고려 중인 행동: ${s.consideredActions.join(', ') || '미확인'}`,
-      '아래에서 고치거나 그대로 확인해 주세요.',
+      '제가 이해한 걸 정리해 볼게요.',
+      `• 상황: ${s.situation || '아직 못 들었어요'}`,
+      `• 마감: ${s.deadline.raw || '아직 못 들었어요'}`,
+      `• 진행: ${s.progress || '아직 못 들었어요'}`,
+      `• 고려 중인 행동: ${s.consideredActions.join(', ') || '아직 못 들었어요'}`,
+      '맞으면 아래 「맞아요」를 눌러 주세요. 다르거나 더 말할 게 있으면 그냥 이어서 적어 주시면 돼요.',
     ].join('\n')
 
   const callFunction = async <T>({

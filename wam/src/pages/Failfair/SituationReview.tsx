@@ -32,7 +32,10 @@ const split = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean)
 
-/** v2 §3.1 3단계: "제가 이해한 상황이 맞나요?" 수정 가능한 요약. */
+/**
+ * v2 §3.1 3단계의 우회로. 기본은 대화 안에서 「맞아요」로 확정하고, 대화로
+ * 고치기 어려울 때만 여기서 항목별로 직접 고친다.
+ */
 function SituationReviewPage({
   situation,
   busy,
@@ -74,7 +77,8 @@ function SituationReviewPage({
         typo="14"
         color="text-neutral-light"
       >
-        제가 이해한 상황이에요. 틀린 곳은 고쳐 주세요. 모르는 건 비워 둬도 돼요.
+        항목별로 직접 고치는 화면이에요. 틀린 곳만 고치면 되고, 모르는 건 비워
+        둬도 돼요.
       </Text>
 
       {situation.major && (
@@ -203,7 +207,7 @@ function SituationReviewPage({
           size="m"
           variant="ghost"
           semantic="secondary"
-          label="더 말할게요"
+          label="대화로 돌아가기"
           disabled={busy}
           onClick={onBack}
         />
