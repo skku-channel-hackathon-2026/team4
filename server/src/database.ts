@@ -1,13 +1,14 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 // A small shared contract keeps local Node development independent of Workers types.
+export interface AppStatement {
+  run(): Promise<{ meta?: { changes?: number } } | unknown>;
+  first<T = Record<string, unknown>>(): Promise<T | null>;
+  all<T = Record<string, unknown>>(): Promise<{ results?: T[] } | unknown>;
+}
 export interface AppDatabase {
-  prepare(sql: string): {
-    bind(...values: (string | number | null)[]): {
-      run(): Promise<unknown>;
-      first<T = Record<string, unknown>>(): Promise<T | null>;
-    };
-    first<T = Record<string, unknown>>(): Promise<T | null>;
+  prepare(sql: string): AppStatement & {
+    bind(...values: (string | number | null)[]): AppStatement;
   };
 }
 const databaseContext = new AsyncLocalStorage<AppDatabase>();
@@ -21,4 +22,16 @@ export function getDatabase(): AppDatabase {
       "D1 requires the Cloudflare runtime; use pnpm dev:cloudflare",
     );
   return database;
+}
+
+/** D1의 `run()`이 돌려주는 변경 행 수. 조건부 쓰기가 실제로 먹었는지 판정한다. */
+export function changedRows(result: unknown): number {
+  const meta = (result as { meta?: { changes?: number } } | null)?.meta;
+  return typeof meta?.changes === "number" ? meta.changes : 0;
+}
+
+/** D1의 `all()`이 돌려주는 행 배열. */
+export function resultRows<T>(result: unknown): T[] {
+  const rows = (result as { results?: T[] } | null)?.results;
+  return Array.isArray(rows) ? rows : [];
 }

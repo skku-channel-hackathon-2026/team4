@@ -11,6 +11,7 @@ import {
   type ReplyOutput,
   type SessionView,
   type Situation,
+  type SosRequest,
   type StartOutput,
 } from '@tutorial/shared'
 
@@ -99,7 +100,10 @@ export interface FailfairApi {
     requestId?: string
   ): Promise<CompareOutput>
   getSession(sessionId: string): Promise<SessionView>
-  getCase(sessionId: string, caseId: string): Promise<{ case: Case }>
+  getCase(
+    sessionId: string,
+    caseId: string
+  ): Promise<{ case: Case; contactable?: boolean }>
   feedback(
     sessionId: string,
     resultId: string,
@@ -108,6 +112,19 @@ export interface FailfairApi {
   submitCase(input: CaseSubmission): Promise<{ case: Case }>
   listCases(status?: CaseStatus): Promise<{ cases: Case[] }>
   reviewCase(caseId: string, status: CaseStatus): Promise<{ case: Case }>
+  // SOS
+  sosRequest(
+    sessionId: string,
+    caseId: string,
+    message: string,
+    /** `open`이 내려 준 서명된 채팅방 표식. 서버가 알림 대상을 이 값으로만 정한다. */
+    chatTarget: string
+  ): Promise<{ request: SosRequest; notified: boolean }>
+  sosList(role: 'student' | 'senior'): Promise<{ requests: SosRequest[] }>
+  sosRespond(
+    sosId: string,
+    status: 'accepted' | 'declined'
+  ): Promise<{ request: SosRequest; notified: boolean }>
 }
 
 export function createFailfairApi(appId: string): FailfairApi {
@@ -160,6 +177,10 @@ export function createFailfairApi(appId: string): FailfairApi {
     listCases: (status) => call(appId, F.listCases, status ? { status } : {}),
     reviewCase: (caseId, status) =>
       call(appId, F.reviewCase, { caseId, status }),
+    sosRequest: (sessionId, caseId, message, chatTarget) =>
+      call(appId, F.sosRequest, { sessionId, caseId, message, chatTarget }),
+    sosList: (role) => call(appId, F.sosList, { role }),
+    sosRespond: (sosId, status) => call(appId, F.sosRespond, { sosId, status }),
   }
 }
 
