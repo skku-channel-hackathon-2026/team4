@@ -20,7 +20,10 @@ export default {
   async fetch(request, bindings, context) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") {
-      return Response.redirect(new URL("/resource/wam/tutorial/", url), 302);
+      return Response.redirect(
+        new URL("/resource/wam/tutorial/?bridge=server", url),
+        302,
+      );
     }
     if (url.pathname === "/api/tts") {
       return demoTts(request, bindings);
