@@ -374,13 +374,7 @@ export function createModelGateway(
   try {
     return new FallbackGateway(
       "gemini",
-      new GeminiGateway(
-        key,
-        rule,
-        config.model,
-        undefined,
-        env.ENABLE_CONTEXT_META_WRITE === "true",
-      ),
+      new GeminiGateway(key, rule, config.model),
       rule,
       log,
     );
