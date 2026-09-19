@@ -32,7 +32,37 @@ function call<T>(
       )
     )
   }
-  return wam.callFunction<T>({ appId, name, params })
+  return wam.callFunction<unknown>({ appId, name, params }).then(unwrap<T>)
+}
+
+interface FunctionEnvelope {
+  result?: unknown
+  error?: { type?: string; message?: string; data?: unknown }
+}
+
+/**
+ * 채널톡 호스트는 App Function 응답을 \`{ result }\` 또는 \`{ error }\` 봉투로 돌려준다.
+ * 개발용 bridge는 result만 돌려주므로 두 모양을 모두 받는다. 봉투를 안 벗기면
+ * start 응답의 assistantMessage·sessionId가 undefined가 되어 첫 말풍선이 비고 다음 호출이 실패한다.
+ */
+export function unwrap<T>(response: unknown): T {
+  if (response && typeof response === 'object') {
+    const envelope = response as FunctionEnvelope
+    const keys = Object.keys(envelope)
+    const looksLikeEnvelope =
+      keys.length > 0 &&
+      keys.every((key) => key === 'result' || key === 'error')
+    if (looksLikeEnvelope) {
+      if (envelope.error) {
+        throw Object.assign(
+          new Error(envelope.error.message ?? '요청이 거부됐어요.'),
+          { type: envelope.error.type, data: envelope.error.data }
+        )
+      }
+      return envelope.result as T
+    }
+  }
+  return response as T
 }
 
 export function newRequestId(): string {
@@ -41,22 +71,33 @@ export function newRequestId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/**
+ * 상태를 바꾸는 호출은 `requestId`를 받는다.
+ *
+ * 서버 `mutate`는 같은 `requestId`를 revision 검사보다 **먼저** 확인해서 저장해 둔
+ * 응답을 그대로 돌려준다. 그래서 통신 실패로 같은 요청을 재전송할 때 이 값을
+ * 그대로 유지하면, 서버는 처리했는데 응답만 유실된 경우에도 중복 처리 없이
+ * 원래 결과를 되찾는다. 생략하면 새 값을 만들어 쓴다(= 새 요청).
+ */
 export interface FailfairApi {
   start(category: Category): Promise<StartOutput>
   reply(
     sessionId: string,
     expectedRevision: number,
-    message: string
+    message: string,
+    requestId?: string
   ): Promise<ReplyOutput>
   confirmSituation(
     sessionId: string,
     expectedRevision: number,
-    situation: Situation
+    situation: Situation,
+    requestId?: string
   ): Promise<ConfirmSituationOutput>
   compare(
     sessionId: string,
     expectedRevision: number,
-    actions: ActionCandidate[]
+    actions: ActionCandidate[],
+    requestId?: string
   ): Promise<CompareOutput>
   getSession(sessionId: string): Promise<SessionView>
   getCase(
@@ -90,26 +131,36 @@ export function createFailfairApi(appId: string): FailfairApi {
   return {
     start: (category) =>
       call(appId, F.start, { category, requestId: newRequestId() }),
-    reply: (sessionId, expectedRevision, message) =>
+    reply: (sessionId, expectedRevision, message, requestId = newRequestId()) =>
       call(appId, F.reply, {
         sessionId,
         expectedRevision,
         message,
-        requestId: newRequestId(),
+        requestId,
       }),
-    confirmSituation: (sessionId, expectedRevision, situation) =>
+    confirmSituation: (
+      sessionId,
+      expectedRevision,
+      situation,
+      requestId = newRequestId()
+    ) =>
       call(appId, F.confirmSituation, {
         sessionId,
         expectedRevision,
         situation,
-        requestId: newRequestId(),
+        requestId,
       }),
-    compare: (sessionId, expectedRevision, actions) =>
+    compare: (
+      sessionId,
+      expectedRevision,
+      actions,
+      requestId = newRequestId()
+    ) =>
       call(appId, F.compare, {
         sessionId,
         expectedRevision,
         actions,
-        requestId: newRequestId(),
+        requestId,
       }),
     getSession: (sessionId) => call(appId, F.getSession, { sessionId }),
     getCase: (sessionId, caseId) =>

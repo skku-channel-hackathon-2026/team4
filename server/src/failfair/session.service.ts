@@ -176,6 +176,8 @@ export function normalizeSituation(situation: Situation): Situation {
   return {
     category: situation.category,
     problemType: situation.problemType,
+    // A 추가(전공 수집). 여기서 빠뜨리면 확인 단계에서 전공이 조용히 사라진다.
+    major: situation.major,
     situation: situation.situation ?? "",
     goal: situation.goal ?? "",
     deadline: {

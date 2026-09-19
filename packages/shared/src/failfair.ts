@@ -203,9 +203,22 @@ export const DeadlineSchema = z.object({
 });
 
 /** v2 2.2 내부 상황 구조. 학생이 말한 사실만 채우고 미확인은 비워 둔다. */
+/**
+ * 학생의 전공. 학과 개편이 잦아 enum으로 고정하지 않고 문자열로 받는다.
+ * `collegeId`는 `SKKU_COLLEGES`의 id, `department`는 표시용 학과명이다.
+ * 아직 학과를 정하지 않은 1학년도 있으므로 `department`는 선택이다.
+ */
+export const MajorSchema = z.object({
+  collegeId: z.string().min(1).max(40),
+  department: z.string().min(1).max(60).optional(),
+});
+export type Major = z.infer<typeof MajorSchema>;
+
 export const SituationSchema = z.object({
   category: CategorySchema,
   problemType: z.string().optional(),
+  /** A 추가(전공 수집). 선택 입력이라 없는 세션도 정상이다. */
+  major: MajorSchema.optional(),
   situation: z.string().default(""),
   goal: z.string().default(""),
   deadline: DeadlineSchema.default({}),

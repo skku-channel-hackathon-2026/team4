@@ -15,3 +15,6 @@ cloudflare/static/
 cloudflare/bundle/
 
 server/evaluation-results/
+
+# Claude Code가 화면 확인용으로 떨군 스크린샷. 리포에 담지 않는다.
+Claude outputs/

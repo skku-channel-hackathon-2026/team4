@@ -177,7 +177,8 @@ function SeniorInputPage({ onSubmit, onOpenReview }: SeniorInputPageProps) {
         color="text-neutral-light"
       >
         실명, 학번, 특정 교수님·상대 이름은 빼 주세요. 성공담이 아니어도, 아직
-        해결 중이어도 좋아요. 등록 후 검수를 거쳐 노출돼요.
+        해결 중이어도 좋아요. 여기 적은 내용은 검수를 거친 뒤 비슷한 고민을 가진
+        다른 학생의 사례 비교 화면에 보여질 수 있어요.
       </Text>
 
       <Section title="카테고리">

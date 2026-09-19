@@ -10,6 +10,7 @@ import {
 import {
   URGENCY_LABELS,
   UrgencySchema,
+  majorLabel,
   type Situation,
   type Urgency,
 } from '@tutorial/shared'
@@ -53,6 +54,8 @@ function SituationReviewPage({
     onConfirm({
       category: situation.category,
       problemType: situation.problemType,
+      // 전공은 이 화면에서 고치지 않지만, 새 객체를 만들기 때문에 넣지 않으면 사라진다.
+      major: situation.major,
       situation: text.trim(),
       goal: goal.trim(),
       deadline: { raw: deadlineRaw.trim(), urgency },
@@ -72,6 +75,16 @@ function SituationReviewPage({
       >
         제가 이해한 상황이에요. 틀린 곳은 고쳐 주세요. 모르는 건 비워 둬도 돼요.
       </Text>
+
+      {situation.major && (
+        <Text
+          as="p"
+          typo="12"
+          color="text-neutral-lighter"
+        >
+          전공: {majorLabel(situation.major)}
+        </Text>
+      )}
 
       <Section title="상황">
         <TextArea
