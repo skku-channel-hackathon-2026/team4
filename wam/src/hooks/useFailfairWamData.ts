@@ -16,6 +16,7 @@ export function useFailfairWamData(): FailfairWamDataResult {
   const chatType = useTypedWamData('chatType')
   const chatTitle = useTypedWamData('chatTitle')
   const mode = useWamData('mode')
+  const demoVoice = useWamData('demoVoice')
 
   return useMemo(() => {
     const parsed = FailfairWamDataSchema.safeParse({
@@ -26,6 +27,7 @@ export function useFailfairWamData(): FailfairWamDataResult {
       chatType,
       chatTitle,
       mode: typeof mode === 'string' && mode ? mode : undefined,
+      demoVoice: demoVoice === true,
     })
     if (parsed.success) return { data: parsed.data, error: null }
     return {
@@ -33,5 +35,14 @@ export function useFailfairWamData(): FailfairWamDataResult {
       error:
         '채널톡이 넘겨준 값이 비어 있어요. 채팅창에서 /tutorial 또는 /망선박 을 다시 실행해 주세요.',
     }
-  }, [appId, channelId, chatId, chatTitle, chatType, managerId, mode])
+  }, [
+    appId,
+    channelId,
+    chatId,
+    chatTitle,
+    chatType,
+    demoVoice,
+    managerId,
+    mode,
+  ])
 }
